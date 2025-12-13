@@ -1,6 +1,6 @@
 # LLM 课程作业提交 (LLM Course Assignments)
 
-欢迎来到 LLM 课程作业提交仓库。本仓库用于管理和提交大语言模型 (LLM) 课程的相关作业。
+欢迎来到 LLM 课程作业提交仓库。本仓库用于管理和提交大模型原理与技术课程的相关作业。
 
 ## ⚠️ 2025 年最新通知
 
@@ -14,7 +14,7 @@
 
 ## 📂 快速导航
 
-- **[LLM-Course-Assignments-2025](./LLM-Course-Assignments-2025)**: **(当前学期)** 2025 年作业说明、代码模版及提交入口。
+- **[LLM-Course-Assignments-2025](./LLM-Course-Assignments-2025)**: **(当前学期)** 2025 年作业说明。
 - *Archived (历史归档)*: 往年作业资料（如有）。
 
 ## 📝 提交须知
