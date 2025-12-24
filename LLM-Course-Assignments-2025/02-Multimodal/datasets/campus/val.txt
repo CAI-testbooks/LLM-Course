@@ -1,0 +1,3 @@
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000003.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000014.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000022.jpg
