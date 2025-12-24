@@ -1,0 +1,27 @@
+# 使用Python 3.10安装包，
+# 安装关键库 代码如下
+pip install langchain langchain-community langchain-openai chromadb python-dotenv streamlit
+# 本电脑实现时具体代码如下
+#--pip更新
+C:\Users\lenovo\AppData\Local\Programs\Python\Python310\python.exe -m pip install --upgrade pip 
+#--pip install依赖包即可
+& C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe -m pip install streamlit
+
+& C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe -m pip install langchain
+
+& C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe -m pip install langchain-community
+
+& C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe -m pip install langchain-openai
+
+& C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe -m pip install chromadb
+
+& C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe -m pip install python-dotenv
+# 修改代码与提交代码的流程
+cd .\LLM-Course-Assignments-2025\01-NLP\
+修改代码后
+git add .
+git commit -m "注释"
+git -c http.sslVerify=false push  我的SSL证书有问题，直接跳过证书验证进行push即可
+运行streamlit流程
+
+C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe -m streamlit run f:/01-NLP-医疗领域特定RAG问答系统/LLM-Course/LLM-Course-Assignments-2025/01-NLP/Medical-RAG/exp.py 
