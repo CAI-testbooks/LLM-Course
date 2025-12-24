@@ -84,17 +84,27 @@ def generate_qa_pair(context):
 
 # --- 4. 循环生成 ---
 generated_data = []
-# 本地测试建议只跑 2 条，Kaggle 全量跑请改为 len(all_docs)
-test_limit =len(all_docs)
+# 本地测试建议只跑 2 条，Kaggle 全量跑改为 len(all_docs)
+test_limit = 2 if DEVICE == "cpu" else len(all_docs)
 
 print(f"📝 开始出题任务，目标条数: {test_limit}")
 
 for i in tqdm(range(test_limit)):
     try:
         raw_output = generate_qa_pair(all_docs[i])
-        # 清理可能存在的 Markdown 标记
-        clean_json = raw_output.replace("```json", "").replace("```", "").strip()
-        generated_data.append(json.loads(clean_json))
+
+        # --- 暴力提取逻辑：只拿第一个 { 和最后一个 } 之间的内容 ---
+        start_idx = raw_output.find('{')
+        end_idx = raw_output.rfind('}')
+        if start_idx != -1 and end_idx != -1:
+            clean_json = raw_output[start_idx:end_idx + 1]
+
+            # 修复 LaTeX 导致的转义报错 [cite: 2025-10-24]
+            clean_json = clean_json.replace("\\", "\\\\").replace("\\\\\\\\", "\\\\")
+
+            generated_data.append(json.loads(clean_json))
+        else:
+            print(f"第 {i} 条未找到 JSON 结构，跳过")
     except Exception as e:
         print(f"跳过第 {i} 条记录，原因: {e}")
         continue
