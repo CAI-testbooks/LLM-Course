@@ -1,22 +1,38 @@
 # 自动控制原理智能助教 RAG 系统
 
 ## 1. 项目简介
-本项目是一款针对“自动控制原理”课程开发的深度 RAG（检索增强生成）问答系统。系统以陈复扬《自动控制原理》及习题集为核心知识源，利用 Qwen-2.5 大模型实现专业知识的精准检索与智能化解答。
+本项目旨在开发一个面向“自动控制原理”课程的深度 RAG（检索增强生成）问答系统。通过集成轻量化大语言模型与专业知识库，解决复杂控制理论问题的精准检索与智能化解答，作为高效的辅助学习工具。
 
 ## 2. 核心功能
-* **大规模专业语料**：基于 1247 条原始片段合成了 5000+ 条高质量 QA 对。
-* **专业数学支持**：完美支持 LaTeX 公式渲染，确保传递函数 $G(s)$ 等公式清晰显示。
-* **高性能检索**：采用 FAISS 本地向量数据库，实现毫秒级知识定位。
-* **拒绝虚假回答**：内置阈值过滤逻辑，有效抑制模型幻觉。
+* **大规模专业语料**：基于 1247 条原始知识片段，成功合成了 5000+ 条高质量 QA 数据对，覆盖自控原理核心章节。
+* **专业数学支持**：完美支持 LaTeX 公式渲染，确保传递函数 $$G(s)$$、状态空间表达式等公式在 Markdown 环境下清晰显示。
+* **高性能检索**：采用 FAISS 本地向量数据库，实现毫秒级知识点定位与语义匹配。
+* **拒绝虚假回答**：内置检索相关度阈值过滤逻辑，有效抑制模型幻觉，确保回答的严谨性。
 
 ## 3. 代码结构说明
-* `step01_process_data.py`: 原始教材语料清洗与分块
-* `step02_build_db.py`: 构建 FAISS 向量数据库
-* `step04_rag_cloud.py`: 云端 RAG 链路测试
-* `step05_data_augmentation_cloud.py`: 大规模数据增强生产脚本
+本项目采用模块化开发，各环节脚本说明如下：
+
+### 核心生产链路
+* `step01_process_data.py`：语料清洗与文本分块处理，将教材内容转化为检索单元。
+* `step02_build_db.py`：基于 FAISS 的向量数据库构建，实现语义索引。
+* `step03_test_llm.py`：本地环境（CPU 版）大模型基础调用测试与角色定制。
+* `step04_rag_cloud.py`：云端（GPU）RAG 全链路推理测试，实测推理速度达 24.52 tokens/s。
+* `step05_data_augmentation_cloud.py`：大规模数据增强生产脚本，用于云端全量合成 5000+ 题库。
+* `step05_data_augmentation_local.py`：数据增强逻辑优化脚本，含 JSON 解析鲁棒性修复逻辑。
+
+### 环境监控与工具
+* `check_gpu.py`：GPU 算力资源可用性检测脚本。
+* `benchmark.py`：系统性能基准测试与云端环境验证。
+* `data/`：存放原始语料及分块后的中间数据。
+* `images/`：存放实验过程截图及 README 资源。
+* `notebooks/`：存放 Kaggle/Colab 实验笔记。
 
 ## 4. 环境安装与启动
-### 依赖安装
-```bash
-pip install langchain transformers faiss-cpu sentence-transformers
+### 运行环境要求
+* **硬件建议**：生产环境推荐使用 GPU（Tesla T4 或更高），本地环境支持 CPU 推理。
+* **软件依赖**：Python 3.10+
 
+### 依赖安装
+请在终端执行以下命令安装核心依赖库：
+```bash
+pip install langchain transformers faiss-cpu sentence-transformers torch accelerate
