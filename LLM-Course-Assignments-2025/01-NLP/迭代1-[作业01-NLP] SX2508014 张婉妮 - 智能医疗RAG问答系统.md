@@ -1,0 +1,80 @@
+# 中文特定领域医疗 RAG 问答系统
+
+本项目构建了一个基于Qwen-2.5-7B大模型与CMedQA2数据集的医疗领域RAG（检索增强生成）问答系统，旨在通过本地知识库检索为用户提供严谨、准确的医疗咨询与建议。
+- **github仓库**：https://github.com/Golden740/SX2508014---01-NLP 。
+## 目前已实现内容
+- **环境部署**：在AutoDL平台上完成RTX 5090单卡环境下的模型加载与向量数据库配置。
+- **知识库构建**： 基于CMedQA2医疗数据集，使用bge-small-zh-v1.5嵌入模型构建Chroma向量数据库。
+- **系统迭代**: 经历了从基础脚本运行到Gradio网页端界面的多次迭代，解决了 Gradio5.x数据格式兼容性、frpc内网穿透下载失败以及模型回复冗余重复等关键问题。
+- **UI定制**: 实现了一套双栏交互界面，左侧进行AI流式对话，右侧实时展示知识库检索溯源结果。
+  
+## 运行环境
+
+- **平台** ： AutoDL (https://www.autodl.com/)。
+- **镜像配置**： PyTorch==2.1.0 Python==3.10(ubuntu22.04) CUDA==12.1。
+- **GPU** ： RTX 5090(32GB)。
+- **CPU** ： 25 vCPU Intel(R) Xeon(R) Platinum 8470Q。
+- **关键库** ： gradio, transformers, langchain, langchain-community, chromadb, modelscope。
+
+## 依赖安装
+
+**执行命令**: pip install gradio transformers langchain langchain-huggingface langchain-community chromadb modelscope
+
+
+## 数据与模型
+
+- **基础模型** : Qwen-2.5-7B-Instruct
+- **Embedding模型** ： BAAI/bge-small-zh-v1.5
+- **向量数据库**：Chroma DB
+- **数据集**：CMedQA2（中文医疗问答数据集）
+
+## 文件作用介绍
+
+使用 Qwen-2.5-7B-instruct 为基础模型
+在AutoDL中，在 /root/autodl-tmp 路径下新建 model_download.py 用于下载完整的模型。
+``` Python
+import torch
+from modelscope import snapshot_download, AutoModel, AutoTokenizer
+import os
+model_dir = snapshot_download('qwen/Qwen2.5-7B-Instruct', cache_dir='/root/autodl-tmp', revision='master')
+```
+
+
+## RAG数据流向说明
+- **数据准备**: process_csv.py(清洗CSV) -> build_db.py (向量化并存入Chroma)。
+- **检索阶段**: app_gradio.py接收输入 -> 调用retriever在chroma_db中寻找最相似的3条医疗记录。
+- **生成阶段**: 将检索结果作为上下文（Context）输入给Qwen-2.5模型 -> 输出精简建议。
+
+
+## 文件作用介绍
+- **1.process_csv.py**: 专门用于处理原始的CMedQA2数据集。它负责读取原始的CSV问答对文件，进行去重、异常值过滤，并按照医疗问答的逻辑重新格式化数据，为后续的向量化做准备。
+- **2.build_db.py**: 该脚本调用langchain-text-splitters对清洗后的医疗数据进行分块，随后使用bge-small-zh-v1.5嵌入模型将文本转化为高维向量，并持久化存储到本地的chroma_db文件夹中。
+- **3.main_rag.py**: RAG系统的核心推理逻辑脚本，用于测试本地检索与生成流程。
+- **4.app_gradio.py**: 基于Gradio构建的Web端问答界面，支持流式输出与检索溯源展示。
+
+
+## 启动方式
+
+streamlit run main_rag.py
+
+
+## 系统迭代历程
+
+### 迭代 1：基础功能实现与报错调试
+
+- 实现了基础的检索问答逻辑。
+- **解决问题**: 修复了`VectorStoreRetriever`缺少`get_relevant_documents`的`AttributeError`，统一升级为LangChain 1.x的`invoke`接口。
+
+### 迭代 2：Gradio 界面美化与格式兼容
+
+- 引入`gr.Blocks`实现双栏布局。
+- **解决问题**: 针对Gradio不同版本的报错，将对话历史从列表格式重构为符合新版规范的字典格式。
+
+### 迭代 3：生成质量优化
+
+- 优化了Prompt模板，引入ChatML格式 (`<|im_start|>`)。
+- **解决问题**: 通过调整`temperature=0.3`和`repetition_penalty=1.2`，解决了AI回复冗余、复读以及原样复述Prompt资料内容的问题。
+
+## 运行截图（第一版，未微调）
+### 1. 核心交互界面
+![双栏交互界面截图](https://github.com/Golden740/SX2508014---01-NLP/blob/main/images/ui_main.png)
