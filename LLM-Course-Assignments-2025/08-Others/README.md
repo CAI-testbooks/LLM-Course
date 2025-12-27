@@ -1,27 +1,59 @@
-# 方向08：其他相关方向综合作业
+# 基于SAM2微调的显著性目标检测
 
-## 题目描述
-自由选题：探索一个新兴AI方向（如AI Agent协作、模型结构、微调、Scaling Law验证、AI for Science、可持续AI等），实现完整实验流程。
+## 选题理由
 
-## 题目要求
-- 必须包含大模型核心技术（如预训练、微调、Agent、RAG、多模态）。
-- 全流程：数据、模型、评估、部署。
-- 鼓励跨领域创新（如AI+气候、AI+教育、AI+艺术）。
-- 需在报告中明确创新点与基准比较。
+个人研究方向为显著性目标检测，SAM2作为一个可以分割任意图像的视觉大模型在该领域可以展现出显著的效果，因此尝试使用微调来加深对个人研究方向的认识以及强化代码能力。
 
-## 最后提交要求
-1. **代码提交**  
-   - 独立公开GitHub仓库，提供完整复现步骤。
+## 数据集
 
-2. **报告提交**  
-   - 详细说明选题理由、相关工作对比、贡献与创新点。
+显著性目标检测数据集：DUTS
 
-3. **文件名命名规范**  
-   - 报告文件：`学号-姓名-08-Other-具体选题关键词.md` 或 `.pdf`  
-     示例：`20231234-李四-08-Other-AIforScience.pdf`
+```
+dataset
+├─ DUTS-TR
+| |─ gt
+│ └─ im
+└─ DUTS-TE
+  |─ gt
+  └─ im
+```
 
-4. **Pull Request 要求**  
-   - 提交至 `08-Other/submissions/`  
-   - PR 标题：`[作业08-Other] 学号 姓名 - 你的选题标题`
+## 模型架构
+当前采用适配器的方式来微调image_encoder，mask_decoder以及prompt_ecoder全量微调
+采用CBAM模块精细化特征图
+数据预处理当前仅使用缩放去对齐
+损失函数当前仅使用BCE
+测试集评估采用Fmax、WeightedF、Emean、Emax、MAE
 
-请严格遵守以上规范，否则将影响评分。
+## 文件描述
+/dataset 数据集
+/checkpoints 预训练模型
+/checkpoints_finetuned 微调训练模型
+/sam2 模型
+requirement.txt: 本次实验所使用的依赖
+adapter.py: 微调image_encoder
+dataloader.py: 数据集处理
+evaluator.py: 测试评估器
+metric.py: 评估函数
+finetuning.py: 训练
+predict_finetuning.py: 预测
+option.py: 参数配置
+app.py: UI展示
+
+## 未来工作
+
+代码优化（使用类、函数去使得代码更加可观，添加适量的注释）
+
+更改适配器模块/多尺度融合Image Encoder的不同层/采取多分支解码器+特定模块融合方式（低层-边缘，高层-细节）
+
+采用automatic_mask_generator生成关于前景的伪掩码
+
+采用dice、bce、ssim进行损失监督
+
+采用更多的数据集（DUT-OMRON、ECSSD、HKU-IS、PASCAL-S）
+
+数据预处理采取旋转、降低对比度等预操作
+
+UI界面更新
+
+
