@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PUding Agent UI</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
+</head>
+<body>
+<div class="container">
+<div class="header"><div class="brand">PUding Agent</div><div class="meta"><span id="modelInfo">Loading...</span></div></div>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <div class="side-title">会话</div>
+      <button id="newSession">新建</button>
+    </div>
+    <div id="sessionList"></div>
+  </aside>
+  <main class="main">
+<div class="grid">
+  <div class="panel" id="chatPanel">
+    <div class="panel-title">对话</div>
+    <div class="chat"><div id="messages"></div></div>
+    <div class="input-bar">
+      <textarea id="input" rows="3" placeholder="输入你的指令，Shift+Enter 换行，Enter 发送"></textarea>
+      <button id="send">发送</button>
+      <button id="refresh">刷新历史</button>
+      <button id="regen">重新生成</button>
+    </div>
+    <div class="suggest" id="suggest"></div>
+    <div class="ctx-bar">
+      <input id="addPath" type="text" placeholder="添加到上下文：文件或目录路径">
+      <button id="addBtn">加入上下文</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">文件浏览</div>
+    <div class="browser">
+      <div class="pathbar">
+        <span id="curPath">.</span>
+        <button id="rootBtn">根目录</button>
+        <button id="upBtn">上一级</button>
+        <button id="toggleBrowser">折叠</button>
+      </div>
+      <div id="fileList"></div>
+    </div>
+    <div class="preview">
+      <div class="panel-title">预览</div>
+      <pre id="previewBox"></pre>
+    </div>
+  </div>
+  <div class="panel config-panel"><div class="panel-title">项目信息与配置</div><div class="config"><div class="row"><label>数据基准</label><select id="datasetSel"><option value="HumanEval">HumanEval</option><option value="MBPP">MBPP</option><option value="SWE-Bench">SWE-Bench</option></select><button id="loadExample">加载示例</button><button id="toggleConfig">折叠</button></div><div class="row"><label>生成策略</label><label><input type="checkbox" id="flagReflect"> 启用反思</label><label><input type="checkbox" id="flagTools"> 工具优先</label><label><input type="checkbox" id="flagTests"> 自动单测</label></div><div class="cards"><div class="card"><div class="card-title">核心功能</div><div class="card-body">需求理解、代码生成、单元测试自动编写、Bug修复</div></div><div class="card"><div class="card-title">迭代优化</div><div class="card-body">反思机制与工具调用融合，失败后修复重试</div></div><div class="card"><div class="card-title">部署</div><div class="card-body">CLI 与 Web 两种形态，当前为 Web UI</div></div><div class="card"><div class="card-title">评估</div><div class="card-body">在 SWE-Bench 或自定义任务上记录成功率</div></div></div></div></div>
+</div>
+</main>
+</div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>
