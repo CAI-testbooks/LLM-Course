@@ -1,27 +1,13 @@
-# 方向08：其他相关方向综合作业
+# AVPpred-BWR
+Prediction of Antiviral Peptides
 
-## 题目描述
-自由选题：探索一个新兴AI方向（如AI Agent协作、模型结构、微调、Scaling Law验证、AI for Science、可持续AI等），实现完整实验流程。
+  The peptides possessing potential to inhibit the virus are considered as antiviral peptides (AVPs). Usually, the AVPs exhibit antiviral effects by inhibiting the virus directly. With the development of molecular biology techniques, some data-driven tools have emerged to predict antiviral peptides. However, it is necessary to improve the predictive performance of these tools for antiviral peptides.
 
-## 题目要求
-- 必须包含大模型核心技术（如预训练、微调、Agent、RAG、多模态）。
-- 全流程：数据、模型、评估、部署。
-- 鼓励跨领域创新（如AI+气候、AI+教育、AI+艺术）。
-- 需在报告中明确创新点与基准比较。
+  In this study, we propose a biological words model for the first time and create a model named AVPpred-BWR designed for the prediction of antiviral peptides. To the best of our knowledge, this is the first time that realized the word segmentation of protein primary structure sequence based on the regularity of protein secondary structure.
+Finally, our model achieves 96.1% AUC, 79.8% MCC, 89.3% ACC,97.9% SN, 80.7% SP on the training dataset. compared with the state-of-the-art model, AUC increases by 4.6% and MCC increases by 11.0%. Meanwhile, we generalize the model and tests on the Anticancer activity dataset and the DPP-IV inhibitory activity dataset, which still achieves better performance than the existing model.
 
-## 最后提交要求
-1. **代码提交**  
-   - 独立公开GitHub仓库，提供完整复现步骤。
+![image](https://github.com/user-attachments/assets/c185c8e5-b328-48ea-abfb-ddfed3fe0d82)
 
-2. **报告提交**  
-   - 详细说明选题理由、相关工作对比、贡献与创新点。
-
-3. **文件名命名规范**  
-   - 报告文件：`学号-姓名-08-Other-具体选题关键词.md` 或 `.pdf`  
-     示例：`20231234-李四-08-Other-AIforScience.pdf`
-
-4. **Pull Request 要求**  
-   - 提交至 `08-Other/submissions/`  
-   - PR 标题：`[作业08-Other] 学号 姓名 - 你的选题标题`
-
-请严格遵守以上规范，否则将影响评分。
+Our dataset of biological words representation is available at:
+Baidu Netdisk: https://pan.baidu.com/s/1IIW6kUwZPQnlrLJ240YVmw 
+Code: 7668
