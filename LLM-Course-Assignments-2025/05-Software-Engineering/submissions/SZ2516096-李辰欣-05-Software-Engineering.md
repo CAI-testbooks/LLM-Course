@@ -56,6 +56,49 @@ Code Generator     Test Generator
         └──────────────┘
 ```
 
+### 3.2 项目结构
+
+```text
+code-assistant-agent/
+├── README.md                    # 项目说明文档
+├── .gitignore                   # Git忽略文件
+│
+├── config/                     # 配置文件目录
+│   ├── __init__.py
+│   ├── config.yaml            # 主配置文件
+│   ├── model_config.yaml      # 模型配置
+│   └── prompt_templates.yaml  # 提示词模板
+│
+├── src/                        # 源代码目录
+│   ├── __init__.py
+│   ├── main.py                # 主入口文件
+│   │
+│   ├── core/                  # 核心逻辑
+│   │   ├── __init__.py
+│   │   ├── agent.py          # 主Agent类
+│   │   ├── reflection.py     # 反思引擎
+│   │   ├── planner.py        # 任务规划器
+│   │   ├── code_generator.py # 代码生成器
+│   │   ├── tester.py         # 测试生成器
+│   │   └── fixer.py          # Bug修复器
+│   │
+│   ├── models/                # 模型相关
+│   │   ├── __init__.py
+│   │   ├── base_model.py     # 模型基类
+│   │   └── qwen_model.py     # Qwen适配器
+│   │
+│   ├── tools/                 # 工具模块
+│   │   ├── __init__.py
+│   │   ├── base_tool.py      # 工具基类
+│   │   └── python_repl.py    # Python执行器
+│   │
+│   ├── utils/                 # 工具函数
+│   │   ├── __init__.py
+│   │   ├── llm_utils.py      # LLM调用
+│   │   └── config_utils.py   # 配置加载
+│   
+```
+
 ---
 
 ## 四、实验步骤与实现方案  
@@ -87,35 +130,27 @@ Code Generator     Test Generator
 #### 4.3.4 Bug Fix Agent  
 结合错误信息与测试失败信息，分析原因并生成修复后的代码。  
 
-### 4.4 反思与迭代机制  
+### 4.4 Reflection Agent
 引入Self-Reflection Prompt，使系统能在失败后分析原因、调整假设，并进行多轮迭代优化。  
-
-迭代流程伪代码：  
-```python
-for step in range(max_iter):
-    code = generate_code()
-    tests = generate_tests()
-    result = run_tests(code, tests)
-    if result.success:
-        break
-    code = fix_bug(code, result.error)
-```
 
 ---
 
 ## 五、实验进展与当前版本说明  
 
-### 5.1 当前版本（第一版）  
+### 5.0 历史版本（第一版）  
 - 已完成系统整体架构设计与各Agent功能定义  
 - 完成Prompt模板设计与数据集选型  
-- 实现模拟数据流，验证系统逻辑可行性  
+- 实现模拟数据流，验证系统逻辑可行性
+
+### 5.1 当前版本（第二版）
+- 参考标准项目开发流程，构建规范的项目结构，后续将基于该版本进行功能完善。已将第一版内容完成迁移。
 
 ### 5.2 已实现功能  
 - Task Planner 结构化输出  
 - Code / Test / Bug Fix Agent 的Prompt模板  
 - Self-Reflection 机制设计  
 
-### 5.3 待实现与优化（下一版任务）  
+### 5.3 待实现与优化  
 1. 完善各Agent的具体实现与模型调用  
 2. 实现评估指标计算（Pass@1、测试覆盖率、修复成功率等）  
 3. 模块解耦，支持各Agent独立运行与测试  
@@ -132,25 +167,6 @@ for step in range(max_iter):
 | Bug修复           | 修复成功率    | 成功修复的Bug比例          |
 | 系统整体          | 平均迭代次数  | 从生成到最终通过所需迭代次数   |
 
----
-
-## 七、实验总结与展望  
-
-### 7.1 实验总结  
-本实验围绕“AI驱动的软件开发助手”这一主题，设计了一套基于大模型的多Agent协作系统。通过模块化设计，系统具备从需求理解到代码生成、测试、修复的全流程自动化能力。第一版主要完成架构设计与逻辑验证，为后续实现奠定基础。
-
-### 7.2 技术挑战与思考  
-- **任务拆解的准确性**：如何将模糊需求转化为明确、可执行的开发任务  
-- **代码生成的可靠性**：如何在保证功能正确的同时遵循最佳实践  
-- **测试生成的完备性**：如何高效生成高覆盖率的测试用例  
-- **自我迭代的效率**：如何减少不必要的迭代，提升修复速度  
-
-### 7.3 后续工作安排  
-1. 逐步实现各Agent的具体逻辑，接入真实模型与执行环境  
-2. 开展对比实验，评估不同模型、Prompt策略的效果  
-3. 探索多语言、多框架支持，提升系统通用性  
-4. 考虑集成版本控制、CI/CD等开发生态工具  
-
 --- 
 
-> 说明：本报告为第一版实验报告，后续将随系统迭代持续更新完善。
+> 说明：本报告为第二版实验报告，后续将随系统迭代持续更新完善。
