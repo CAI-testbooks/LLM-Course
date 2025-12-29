@@ -17,7 +17,7 @@ C:\Users\lenovo\AppData\Local\Programs\Python\Python310\python.exe -m pip instal
 
 & C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe -m pip install python-dotenv
 # 修改代码与提交代码的流程
-cd .\LLM-Course-Assignments-2025\01-NLP\
+cd .\LLM-Course\LLM-Course-Assignments-2025\01-NLP\
 修改代码后
 git add .
 git commit -m "注释"

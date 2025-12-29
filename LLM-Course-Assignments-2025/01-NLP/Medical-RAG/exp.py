@@ -14,7 +14,7 @@ from langchain_core.runnables import RunnablePassthrough
 # ==========================================
 # 配置区域
 # ==========================================
-ST_TITLE = "🚁 X-2000 无人机 - 智能技术支持终端"
+ST_TITLE = "中文医疗领域智能问答系统"
 os.environ["OPENAI_API_KEY"] = "sk-gyuofotkkugmqvlmcuchjdzmipktruzczqvqtqyiyfqbqvsu"  # 填入你的 Key
 os.environ["OPENAI_API_BASE"] = "https://api.siliconflow.cn/v1"
 MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
@@ -60,10 +60,10 @@ def initialize_rag_system():
 
     # 6. 定义 Prompt
     template = """
-    你是一个专业的无人机技术支持专家。请结合以下【上下文】和【历史聊天记录】回答用户问题。
-    如果不知道，请直接说不知道。
+    你是一个专业的医疗AI助手。请结合以下【医学知识】和【历史聊天记录】回答用户问题。
+    如果不知道，请直接说"根据现有医学资料，我无法提供确切答案，建议咨询专业医生"。
 
-    【上下文】：
+    【医学知识】：
     {context}
 
     【用户问题】：
@@ -85,23 +85,28 @@ def initialize_rag_system():
 # ==========================================
 # Streamlit UI 界面逻辑
 # ==========================================
-st.set_page_config(page_title=ST_TITLE, page_icon="🚁")
+st.set_page_config(page_title=ST_TITLE, page_icon="🏥")
 st.title(ST_TITLE)
+st.markdown("### 💊 基于医学知识库的智能问答系统")
+st.markdown("---")
 
 # 侧边栏：显示系统状态
 with st.sidebar:
     st.header("系统状态面板")
-    with st.spinner("正在启动神经中枢..."):
+    with st.spinner("正在加载医学知识库..."):
         rag_chain, msg = initialize_rag_system()
 
     if rag_chain:
-        st.success("✅ 知识库已挂载 (RAG Ready)")
+        st.success("✅ 医学知识库已挂载 (RAG Ready)")
         st.info(f"🧠 模型: {MODEL_NAME}")
     else:
         st.error(f"❌ 启动失败: {msg}")
         st.stop()
 
     st.markdown("---")
+    st.markdown("**免责声明**")
+    st.markdown("⚠️ 本系统仅提供医学知识参考，不能替代专业医疗建议。如有紧急情况，请立即就医。")
+    
     if st.button("清除对话历史"):
         st.session_state.messages = []
         st.rerun()
@@ -117,7 +122,7 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # 2. 处理用户输入
-if prompt := st.chat_input("请输入关于 X-2000 的问题..."):
+if prompt := st.chat_input("请输入关于中文医疗领域的问题..."):
     # 显示用户的问题
     st.chat_message("user").markdown(prompt)
     # 将问题存入历史

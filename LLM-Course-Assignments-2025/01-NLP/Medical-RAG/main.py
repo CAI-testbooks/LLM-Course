@@ -33,19 +33,19 @@ EMBEDDING_MODEL = "BAAI/bge-m3"  # 向量模型
 
 def main():
     print("-" * 50)
-    print("🚀 RAG 智能问答系统启动...")
+    print("🏥 中文医疗领域智能问答系统启动...")
     print("-" * 50)
 
     # ---------------------------------------------------
     # 第一步：数据加载 (Load)
     # 教学讲解：将非结构化的文本文件加载到内存中
     # ---------------------------------------------------
-    print(f"[1/5] 正在加载文档 knowledge.txt ...")
+    print(f"[1/5] 正在加载医疗知识库 knowledge.txt ...")
     try:
         loader = TextLoader("./knowledge.txt", encoding="utf-8")
         docs = loader.load()
     except FileNotFoundError:
-        print("❌ 错误：找不到 knowledge.txt 文件，请先生成数据文件！")
+        print("❌ 错误：找不到 knowledge.txt 文件，请先生成医疗知识库数据文件！")
         return
 
     # ---------------------------------------------------
@@ -93,10 +93,10 @@ def main():
 
     # 3. 定义 Prompt 模板
     template = """
-    你是一个专业的智能助手。请严格根据以下【上下文】来回答用户的问题。
-    如果上下文中没有答案，请直接说“我不知道”，不要编造信息。
+    你是一个专业的医疗AI助手。请严格根据以下【医学知识】来回答用户的问题。
+    如果上下文中没有答案，请直接说"根据现有医学资料，我无法提供确切答案，建议咨询专业医生"，不要编造信息。
 
-    【上下文】：
+    【医学知识】：
     {context}
 
     【用户问题】：
@@ -119,20 +119,20 @@ def main():
     print("-" * 50)
 
     # 测试问题 1
-    query1 = "X-2000 无人机的最大飞行时间和抗风等级是多少？"
+    query1 = "高血压的常见症状和治疗方法有哪些？"
     print(f"👤 提问: {query1}")
     print("🤖 思考中...", end="", flush=True)
     response1 = rag_chain.invoke(query1)
-    print(f"\r🤖 回答: {response1}\n")
+    print(f"\r🏥 回答: {response1}\n")
 
     print("-" * 30)
 
-    # 测试问题 2 (测试紧急指令)
-    query2 = "如果遇到紧急情况，怎么强制降落？"
+    # 测试问题 2 (测试紧急情况)
+    query2 = "如果遇到心脏病发作的紧急情况，应该怎么处理？"
     print(f"👤 提问: {query2}")
     print("🤖 思考中...", end="", flush=True)
     response2 = rag_chain.invoke(query2)
-    print(f"\r🤖 回答: {response2}\n")
+    print(f"\r🏥 回答: {response2}\n")
 
     print("-" * 50)
     print("✅ 实验演示结束")
