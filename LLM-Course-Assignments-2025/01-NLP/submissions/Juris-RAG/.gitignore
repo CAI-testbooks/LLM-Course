@@ -1,0 +1,45 @@
+# 环境变量和密钥
+.env
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 向量数据库（文件可能很大）
+data/vector_db/
+
+# 日志文件
+*.log
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 测试覆盖率
+htmlcov/
+.coverage
+.pytest_cache/
+
+# 分发和打包
+dist/
+build/
+*.egg-info/

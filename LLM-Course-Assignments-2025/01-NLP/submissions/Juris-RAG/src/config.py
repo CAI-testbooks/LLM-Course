@@ -1,0 +1,107 @@
+"""
+Juris-RAG 配置文件
+法律领域RAG问答系统配置
+"""
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
+
+# ==================== 路径配置 ====================
+BASE_DIR = Path(__file__).parent.parent
+DATA_PATH = str(BASE_DIR / "data" / "raw")
+DB_PATH = str(BASE_DIR / "data" / "vector_db")
+EVAL_DATA_PATH = str(BASE_DIR / "data" / "eval")
+REPORTS_PATH = str(BASE_DIR / "reports")
+
+# ==================== API配置 ====================
+SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
+SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
+
+# ==================== 模型配置 ====================
+# Embedding模型 - 使用BGE-M3，支持中文法律领域
+EMBEDDING_MODEL = "BAAI/bge-m3"
+EMBEDDING_DIMENSION = 1024  # BGE-M3的向量维度
+
+# LLM模型 - 使用Qwen2.5，支持长上下文
+LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+# 可选更大的模型以获得更好效果
+# LLM_MODEL = "Qwen/Qwen2.5-14B-Instruct"
+# LLM_MODEL = "Qwen/Qwen2.5-32B-Instruct"
+
+# ==================== RAG参数配置 ====================
+# 文本分块参数
+CHUNK_SIZE = 500  # 每个文本块的大小
+CHUNK_OVERLAP = 100  # 文本块之间的重叠
+
+# 检索参数
+RETRIEVAL_TOP_K = 5  # 检索返回的文档数量
+RETRIEVAL_SCORE_THRESHOLD = 0.3  # 相似度阈值，低于此值的结果将被过滤
+
+# 重排序参数（预留，尚未在引擎中启用）
+ENABLE_RERANK = False
+RERANK_TOP_K = 3  # 重排序后保留的文档数量
+
+# ==================== 长上下文配置 ====================
+# Qwen2.5支持32k+上下文
+MAX_CONTEXT_LENGTH = 32768
+MAX_INPUT_LENGTH = 16384  # 用户输入的最大长度
+MAX_HISTORY_TURNS = 10  # 保留的历史对话轮数
+
+# ==================== LLM生成参数 ====================
+LLM_TEMPERATURE = 0.1  # 法律场景需要严谨，温度设低
+LLM_MAX_TOKENS = 2048  # 最大生成长度
+LLM_TOP_P = 0.9
+
+# ==================== 置信度与拒答配置 ====================
+# 当检索结果相似度低于此阈值时，拒绝回答
+CONFIDENCE_THRESHOLD = 0.4
+# 不确定回答的提示语
+UNCERTAIN_RESPONSE = """抱歉，根据现有法律数据库，我无法准确回答此问题。
+
+可能的原因：
+1. 该问题涉及的法律领域不在我的知识范围内
+2. 问题描述不够明确，请尝试提供更多细节
+3. 这可能是一个需要专业律师判断的复杂法律问题
+
+建议：请咨询专业律师获取准确的法律意见。"""
+
+# ==================== 数据处理配置 ====================
+# CAIL数据集加载限制（可通过环境变量覆盖）
+CAIL_CASE_LIMIT = int(os.getenv("CAIL_CASE_LIMIT", "20000"))
+
+# 法条分割模式
+STATUTE_SEPARATORS = ["\n第", "\n\n", "\n", "。", "；"]
+
+# ==================== Web应用配置 ====================
+APP_TITLE = "Juris-RAG 法律智能问答系统"
+APP_DESCRIPTION = """
+**Juris-RAG** 是一个基于检索增强生成（RAG）技术的中文法律问答系统。
+
+**功能特点：**
+- 支持刑法法条和案例检索
+- 多轮对话，理解上下文
+- 提供引用来源，可追溯
+- 对不确定的问题会明确告知
+
+**使用提示：**
+- 输入您的法律问题，系统会检索相关法条和案例
+- 系统会标注回答的来源依据
+- 如需了解具体案例，可以描述案情
+"""
+
+# ==================== 评估配置 ====================
+EVAL_BATCH_SIZE = 10
+EVAL_METRICS = ["accuracy", "citation_f1", "hallucination_rate", "relevance"]
+
+# ==================== 向量化节流配置 ====================
+# 可通过环境变量覆盖，避免触发RPM/TPM限制
+EMBED_RPM_LIMIT = int(os.getenv("EMBED_RPM_LIMIT", "2000"))
+EMBED_TPM_LIMIT = int(os.getenv("EMBED_TPM_LIMIT", "500000"))
+EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "20"))
+EMBED_SLEEP_SECONDS = float(os.getenv("EMBED_SLEEP_SECONDS", "0.1"))
+EMBED_MAX_RETRIES = int(os.getenv("EMBED_MAX_RETRIES", "5"))
+EMBED_BACKOFF_SECONDS = float(os.getenv("EMBED_BACKOFF_SECONDS", "10"))
+EMBED_BACKOFF_MAX_SECONDS = float(os.getenv("EMBED_BACKOFF_MAX_SECONDS", "120"))
