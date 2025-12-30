@@ -42,6 +42,25 @@
 - 初版执行器可驱动无人机完成“起飞→移动→下降→投放→继续飞行→降落”的流程。
 - 日志与轨迹输出：生成 `trace_*.json`，用于复现与评估。
 
+## 2025-12-27
+### 1) Agent 初版：llm_agent_node.py（规则版）
+- 新增 `llm_agent_node.py`：实现“规则版 Agent”，将用户意图（目标点/投送点/高度/等待时间等）转为可执行 plan（JSON/字典结构）。
+- Agent 输出 plan 后由执行器逐步调用 ROS 工具链（起飞/移动/下降/悬停/投放/继续飞行/降落），形成“感知/规划/行动”的最小闭环雏形。
+- 预留接口：后续可将规则版替换为真实 LLM（ReAct/Tool Calling），Agent 只需改 plan 生成模块，执行器保持不变。
+
+### 2) 可重播流程与调试
+- 实践 Gazebo reset / 重新播放流程：支持 reset 后再次执行任务（重复实验）。
+- 修正 launch 注释方式与 XML 语法问题（避免 `Invalid roslaunch XML syntax`）。
+- 处理模型/节点名不一致导致的控制报错：`GetModelState: model [uav_dummy] does not exist`（统一 spawn 的 model name 与控制端读取名称）。
+
+### 3) 动作节奏优化（更符合任务描述）
+- 调整飞行速度与节奏，使动作可观察：加入 wait/hover/指定耗时移动。
+- 目标动作节奏（示例）：
+  - 起点等待 5s → 起飞到 1m
+  - 前飞 5m 用时 5s
+  - 降到 0.5m 悬停 3s → 投包
+  - 升到 1m，再前飞 5m 用时 5s
+  - 最后降落
 
 
 ---
