@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 自动控制原理智能助教 RAG 系统
 
 ## 1. 项目简介
@@ -36,3 +37,6 @@
 请在终端执行以下命令安装核心依赖库：
 ```bash
 pip install langchain transformers faiss-cpu sentence-transformers torch accelerate
+
+
+```
