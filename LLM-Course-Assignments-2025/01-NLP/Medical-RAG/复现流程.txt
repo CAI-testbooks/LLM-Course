@@ -25,3 +25,6 @@ git -c http.sslVerify=false push  我的SSL证书有问题，直接跳过证书�
 运行streamlit流程
 
 C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe -m streamlit run f:/01-NLP-医疗领域特定RAG问答系统/LLM-Course/LLM-Course-Assignments-2025/01-NLP/Medical-RAG/exp.py 
+
+运行数据集下载代码
+ C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe "F:\01-NLP-医疗领域特定RAG问答系统\LLM-Course\LLM-Course-Assignments-2025\01-NLP\Medical-RAG\dataset_download\my_dataset.py"
