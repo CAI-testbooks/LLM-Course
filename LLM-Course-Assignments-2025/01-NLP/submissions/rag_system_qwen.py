@@ -224,9 +224,9 @@ class QwenRAGSystem:
                 raw_data = json.load(f)
             
             logger.info(f"加载了 {len(raw_data)} 条原始数据")
-            MAX_RECORDS = 10
+            #MAX_RECORDS = 10000
             # 处理每条记录
-            for i, item in enumerate(raw_data[:MAX_RECORDS]):
+            for i, item in enumerate(raw_data):
                 try:
                     # 创建数据记录
                     record = DataRecord(
@@ -398,21 +398,91 @@ class QwenRAGSystem:
     #         return float(dot_product / (norm1 * norm2))
     #     except:
     #         return 0.0
-    
-    def _query_rewrite(self, query: str) -> str:
+
+
+    def _query_rewrite(self, query: str):
         """
-        查询重写接口（可扩展）
-        
-        Args:
-            query: 原始查询
-            
-        Returns:
-            str: 重写后的查询
+        查询重写接口：
+        - 将查询拆分为多个子问题
+        - 为每个子问题分配权重
+        - 返回结构化结果，便于相似度计算
         """
-        # 这里可以实现查询扩展、同义词替换等逻辑
-        # 当前直接返回原始查询
-        return query.strip()
-    
+
+        query = query.strip()
+        if not query:
+            return {
+                "original_query": "",
+                "sub_queries": []
+            }
+
+        prompt = f"""
+    你是一个查询重写与意图拆解系统。
+
+    你的任务是：
+    1. 将用户查询拆分为若干「子问题」
+    2. 判断每个子问题在整体查询中的重要性
+    3. 为每个子问题分配一个权重（0~1，权重之和为 1）
+    4. 输出严格的 JSON 格式，便于程序解析
+
+    拆分原则：
+    - 子问题要尽量短、明确、可独立用于向量检索
+    - 第一个子问题通常是核心问题
+    - 不要生成无关或推测性问题
+
+    输出格式示例：
+    {{
+      "original_query": "...",
+      "sub_queries": [
+        {{
+          "text": "子问题1",
+          "weight": 0.5
+        }},
+        {{
+          "text": "子问题2",
+          "weight": 0.3
+        }},
+        {{
+          "text": "子问题3",
+          "weight": 0.2
+        }}
+      ]
+    }}
+
+    用户查询：
+    \"\"\"{query}\"\"\"
+    """
+
+        try:
+            response = self.dashscope.Generation.call(
+                model=self.llm_model,
+                prompt=prompt,
+                temperature=0.1,
+                max_tokens=2000
+            )
+
+            content = response["output"]["text"]
+            result = json.loads(content)
+
+            # 基本校验，防止模型乱输出
+            if "sub_queries" not in result:
+                raise ValueError("Missing sub_queries field")
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"Query rewrite failed, fallback to original query: {e}")
+
+            # 兜底：不拆分，权重为 1
+            return {
+                "original_query": query,
+                "sub_queries": [
+                    {
+                        "text": query,
+                        "weight": 1.0
+                    }
+                ]
+            }
+
     def _adaptive_similarity_weights(self, query: str, record: DataRecord) -> Tuple[float, float, float]:
         """
         自适应相似度权重接口（可扩展）
@@ -432,39 +502,72 @@ class QwenRAGSystem:
 
     def search(self, query: str, top_k: int = 5):
         try:
-            rewritten_query = self._query_rewrite(query)
+            rewritten = self._query_rewrite(query)
             logger.info(f"原始查询: {query}")
-            logger.info(f"重写查询: {rewritten_query}")
+            logger.info(f"重写结果: {rewritten}")
+            if isinstance(rewritten, str):
+                rewritten = {
+                    "original_query": rewritten,
+                    "sub_queries": [
+                        {"text": rewritten, "weight": 1.0}
+                    ]
+                }
 
-            docs_with_scores = self.vectorstore.similarity_search_with_score(
-                rewritten_query,
-                k=top_k * 5
-            )
+            sub_queries = rewritten.get("sub_queries", [])
+
+            total_weight = sum(s.get("weight", 0) for s in sub_queries)
+            if total_weight > 0:
+                for s in sub_queries:
+                    s["weight"] /= total_weight
 
             record_scores = {}
+            seen_chunks = {}
 
-            for doc, score in docs_with_scores:
-                metadata = doc.metadata
-                record_index = metadata["record_index"]
-                chunk_type = metadata["chunk_type"]
+            for sub in sub_queries:
+                sub_query = sub["text"]
+                weight = sub["weight"]
+                sub_top_k = max(1, int(round(15 * weight)))
 
-                if record_index not in record_scores:
-                    record_scores[record_index] = {
-                        "record": self.data_records[record_index],
-                        "title_similarities": [],
-                        "question_similarities": [],
-                        "answer_similarities": []
-                    }
+                docs_with_scores = self.vectorstore.similarity_search_with_score(
+                    sub_query,
+                    k=sub_top_k
+                )
 
-                # FAISS 返回的是距离（越小越相似），转成相似度
-                similarity = (1.0 / (1.0 + score))*100000
+                for doc, score in docs_with_scores:
+                    metadata = doc.metadata
+                    record_index = metadata["record_index"]
+                    chunk_type = metadata["chunk_type"]
+                    chunk_id = metadata.get("chunk_id", id(doc))
 
-                if chunk_type == "title":
-                    record_scores[record_index]["title_similarities"].append(similarity)
-                elif chunk_type == "question":
-                    record_scores[record_index]["question_similarities"].append(similarity)
-                elif chunk_type == "answer":
-                    record_scores[record_index]["answer_similarities"].append(similarity)
+                    # ⭐ 构造唯一 chunk key
+                    chunk_key = (record_index, chunk_type, chunk_id)
+
+                    similarity = (1.0 / (1.0 + score)) * 100000
+                    weighted_similarity = similarity * weight
+
+                    # ⭐ 去重逻辑：只保留最大贡献
+                    if chunk_key in seen_chunks:
+                        if weighted_similarity <= seen_chunks[chunk_key]:
+                            continue
+                        else:
+                            seen_chunks[chunk_key] = weighted_similarity
+                    else:
+                        seen_chunks[chunk_key] = weighted_similarity
+
+                    if record_index not in record_scores:
+                        record_scores[record_index] = {
+                            "record": self.data_records[record_index],
+                            "title_similarities": [],
+                            "question_similarities": [],
+                            "answer_similarities": []
+                        }
+
+                    if chunk_type == "title":
+                        record_scores[record_index]["title_similarities"].append(weighted_similarity)
+                    elif chunk_type == "question":
+                        record_scores[record_index]["question_similarities"].append(weighted_similarity)
+                    elif chunk_type == "answer":
+                        record_scores[record_index]["answer_similarities"].append(weighted_similarity)
 
             final_scores = []
 
