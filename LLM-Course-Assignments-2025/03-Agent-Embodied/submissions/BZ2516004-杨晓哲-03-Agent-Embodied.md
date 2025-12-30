@@ -32,6 +32,20 @@
 
 # 03-Agent-Embodied 进度日志（BZ2516004 杨晓哲）
 
+## 2025-12-26
+### 1) 课程仓库提交与 PR
+- 在课程仓库 LLM-Course 创建分支 `hw03-agent-embodied`，按要求提交报告并发起 PR（#23）。
+- 修正报告文件命名为课程要求格式，并更新 PR 标题/描述（附独立仓库链接、Demo 链接占位）。
+
+### 2) Gazebo 基础 Demo（可跑通）
+- 完成 Gazebo 场景与基础实体生成（无人机 + payload）。
+- 初版执行器可驱动无人机完成“起飞→移动→下降→投放→继续飞行→降落”的流程。
+- 日志与轨迹输出：生成 `trace_*.json`，用于复现与评估。
+
+
+
+---
+
 ## 2025-12-29
 - Gazebo：无人机模型从简化方块替换为 Iris，修复 spawn/显示问题，demo 可运行。
 - Agent：新增/完善 rule-agent 节点（llm_agent_node）输出 plan；新增/完善 plan 执行器（executor_plan）。
