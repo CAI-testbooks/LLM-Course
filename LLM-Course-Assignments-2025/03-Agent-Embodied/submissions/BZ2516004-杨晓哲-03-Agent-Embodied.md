@@ -30,3 +30,11 @@
 - 视频：<链接>
 - 截图：<可插入图片或链接>
 
+# 03-Agent-Embodied 进度日志（BZ2516004 杨晓哲）
+
+## 2025-12-29
+- Gazebo：无人机模型从简化方块替换为 Iris，修复 spawn/显示问题，demo 可运行。
+- Agent：新增/完善 rule-agent 节点（llm_agent_node）输出 plan；新增/完善 plan 执行器（executor_plan）。
+- 重播：支持 reset 后重新播放（payload reset / uav reset target 等）。
+- 产出：Gazebo 飞行投送流程可复现，日志/轨迹可记录。
+
