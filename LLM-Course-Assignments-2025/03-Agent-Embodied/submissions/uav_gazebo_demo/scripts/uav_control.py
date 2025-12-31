@@ -5,6 +5,8 @@ from geometry_msgs.msg import PoseStamped
 from std_msgs.msg import Bool
 from gazebo_msgs.srv import SetModelState, GetModelState
 from gazebo_msgs.msg import ModelState
+from std_srvs.srv import Trigger, TriggerResponse
+
 
 UAV_MODEL = "uav_dummy"
 
@@ -27,6 +29,16 @@ class UAVControl:
         self.tol = rospy.get_param("~tol", 0.2)
         self.step = rospy.get_param("~step", 0.15)  # 每次逼近的距离（越大越快）
         self.rate = rospy.Rate(20)
+        self.reset_srv = rospy.Service("/uav/reset_target", Trigger, self.on_reset_target)
+        
+    def on_reset_target(self, req):
+        # 清空目标点，避免 reset 后继续飞向旧目标
+        self.target = None
+        try:
+            self.reached_pub.publish(Bool(data=False))
+        except Exception:
+            pass
+        return TriggerResponse(success=True, message="UAV reset: target cleared")
 
     def cb_target(self, msg):
         self.target = msg
