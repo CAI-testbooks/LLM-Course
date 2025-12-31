@@ -1,0 +1,17 @@
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000007.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000008.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000005.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000012.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000023.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000020.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000016.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000013.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000017.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000010.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000004.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000009.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000021.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000011.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000015.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000006.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000001.jpg

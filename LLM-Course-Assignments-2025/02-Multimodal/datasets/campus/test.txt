@@ -1,0 +1,5 @@
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000024.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000019.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000002.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000018.jpg
+D:/AlgorithmClub/Damoxingyuanli/shiyan3/datasets/campus/images/2020123456_000025.jpg
