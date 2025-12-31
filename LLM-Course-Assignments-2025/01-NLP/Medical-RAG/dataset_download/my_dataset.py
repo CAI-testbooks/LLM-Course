@@ -10,7 +10,7 @@ print("验证集样本数:", len(encyclopedia_dataset['validation']))
 print("测试集样本数:", len(encyclopedia_dataset['test']))
 
 # 保存数据集到指定目录
-save_dir = "LLM-Course/LLM-Course-Assignments-2025/01-NLP/Medical-RAG/dataset"  # 目标目录
+save_dir = "Medical-RAG/dataset"  # 目标目录
 os.makedirs(save_dir, exist_ok=True)
 
 # 保存整个数据集

@@ -1,66 +1,171 @@
 import streamlit as st
 import os
-import time
-
-# 引入 LangChain 组件
-from langchain_community.document_loaders import TextLoader
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"#从 Hugging Face 下载 BAAI/bge-m3 嵌入模型时 无法连接到互联网  需修改
+import json
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
+from langchain_huggingface import HuggingFacePipeline, ChatHuggingFace
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
-
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
+import torch
 # ==========================================
 # 配置区域
 # ==========================================
-ST_TITLE = "中文医疗领域智能问答系统"
-os.environ["OPENAI_API_KEY"] = "sk-gyuofotkkugmqvlmcuchjdzmipktruzczqvqtqyiyfqbqvsu"  # 填入你的 Key
-os.environ["OPENAI_API_BASE"] = "https://api.siliconflow.cn/v1"
-MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
-EMBEDDING_MODEL = "BAAI/bge-m3"
 
+ST_TITLE = "中文医疗领域智能问答系统"
+MODEL_NAME = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"  # 本地模型路径
+EMBEDDING_MODEL = "BAAI/bge-m3"
+VECTOR_DB_PATH = "./chroma_db_medical"  # ← 向量库持久化目录 本地已存在 Chroma 向量数据库（如 ./chroma_db_history），就直接加载；如果不存在，则从文档构建并向磁盘保存。
+# ==========================================
+# 自定义 JSONL 加载函数
+# ==========================================
+def load_jsonl_as_documents(file_path):
+    """从 JSONL 文件加载为 LangChain Documents"""
+    docs = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+                questions = data.get("questions", [])
+                answers = data.get("answers", [])
+                
+                # 支持多个问题对应一个答案（取第一个问题作为 content）
+                if not questions or not answers:
+                    st.warning(f"跳过无效行 {file_path}:{line_num}")
+                    continue
+                
+                # 取第一个问题（可能是列表嵌套）
+                question = questions[0]
+                if isinstance(question, list):
+                    question = question[0] if question else ""
+                
+                answer = answers[0] if answers else ""
+                
+                # 构造文本内容（可选：只用问题，或问题+答案）
+                text = f"问题：{question}\n答案：{answer}"
+                metadata = {
+                    "question": question,
+                    "answer": answer,
+                    "source": os.path.basename(file_path),
+                    "line": line_num
+                }
+                docs.append(Document(page_content=text, metadata=metadata))
+            except json.JSONDecodeError as e:
+                st.error(f"JSON 解析失败 {file_path}:{line_num} - {e}")
+                continue
+    return docs
 
 # ==========================================
-# 核心逻辑 (使用 @st.cache_resource 缓存，防止每次刷新都重跑)
-# 技术点：Singleton 模式在 Web 开发中的应用
+# 初始化 RAG 系统
 # ==========================================
 @st.cache_resource
 def initialize_rag_system():
-    """
-    初始化 RAG 系统：加载数据 -> 切分 -> 向量化 -> 存储
-    只运行一次，后续直接调用缓存的对象。
-    """
-    # 1. 加载数据
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    knowledge_path = os.path.join(script_dir, "knowledge.txt")
-    if not os.path.exists(knowledge_path):
-        return None, f"找不到 knowledge.txt 文件: {knowledge_path}"
+    dataset_dir = "/root/autodl-tmp/Medical-RAG/dataset"
+    if not os.path.exists(dataset_dir):
+        return None, f"找不到数据集目录: {dataset_dir}"
 
-    loader = TextLoader(knowledge_path, encoding="utf-8")
-    docs = loader.load()
-
-    # 2. 切分
-    splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
-    splits = splitter.split_documents(docs)
-
-    # 3. 向量化
-    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
-    vectorstore = Chroma.from_documents(documents=splits, embedding=embeddings)
-
-    # 4. 构建检索器
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
-
-    # 5. 定义 LLM (开启流式输出 streaming=True)
-    llm = ChatOpenAI(
-        model_name=MODEL_NAME,
-        temperature=0.1,
-        streaming=True
+    # 向量化配置（必须提前定义，用于加载或创建）
+    embeddings = HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL,
+        model_kwargs={"device": "cuda"},
+        encode_kwargs={"normalize_embeddings": True}
     )
 
-    # 6. 定义 Prompt
+    # 检查是否已有持久化的向量库
+    if os.path.exists(VECTOR_DB_PATH):
+        st.info("检测到已有向量库，正在加载...")
+        vectorstore = Chroma(persist_directory=VECTOR_DB_PATH, embedding_function=embeddings)
+        st.success("✅ 向量库加载完成！")
+    else:
+        # === 需要重新构建向量库 ===
+        json_files = [
+            os.path.join(dataset_dir, "test_data.json"),
+            os.path.join(dataset_dir, "validation_data.json"),
+            os.path.join(dataset_dir, "train_data_8k.json")
+        ]
+        
+        docs = []
+        for file_path in json_files:
+            if os.path.exists(file_path):
+                st.info(f"正在加载: {os.path.basename(file_path)}")
+                file_docs = load_jsonl_as_documents(file_path)
+                docs.extend(file_docs)
+                st.success(f"完成加载: {len(file_docs)} 条记录 from {os.path.basename(file_path)}")
+            else:
+                st.warning(f"文件不存在: {file_path}")
+
+        if not docs:
+            return None, "未加载到任何有效文档"
+
+        # 切分
+        splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
+        splits = splitter.split_documents(docs)
+
+        st.info("正在构建向量库")#首次加载巨慢无比 耐心等待
+        vectorstore = Chroma.from_documents(
+            documents=splits,
+            embedding=embeddings,
+            persist_directory=VECTOR_DB_PATH
+        )
+        st.success("✅ 向量库构建完成并已保存至本地！")
+
+    # 检索器
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+
+    # 加载本地 Qwen-2.5-7B 模型（带量化以节省显存）
+    # 加载 tokenizer 并修复 pad token
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token  # ← 关键修复！
+
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        quantization_config=bnb_config,
+        device_map="auto",
+        trust_remote_code=True
+    )
+
+    # 创建 pipeline 时显式指定 pad/eos token
+    pipe = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=1024,
+        temperature=0.1,
+        top_p=0.95,
+        repetition_penalty=1.1,
+        do_sample=True,
+        pad_token_id=tokenizer.pad_token_id,   # ← 必须
+        eos_token_id=tokenizer.eos_token_id,   # ← 推荐
+        clean_up_tokenization_spaces=True
+    )
+    llm_pipeline = HuggingFacePipeline(pipeline=pipe)
+
+    #llm = HuggingFacePipeline(pipeline=pipe)
+    
+    # 正确方式：先包装成 HuggingFacePipeline，再用 ChatHuggingFace
+    llm_pipeline = HuggingFacePipeline(pipeline=pipe)
+
+    llm = ChatHuggingFace(
+        llm=llm_pipeline,       # ← 必须用 llm= 参数
+        tokenizer=tokenizer,
+        streaming=True
+    )
+    # Prompt
     template = """
-    你是一个专业的医疗AI助手。请结合以下【医学知识】和【历史聊天记录】回答用户问题。
+    你是一个专业的医疗AI助手。请结合以下【医学知识】回答用户问题。
     如果不知道，请直接说"根据现有医学资料，我无法提供确切答案，建议咨询专业医生"。
 
     【医学知识】：
@@ -71,26 +176,26 @@ def initialize_rag_system():
     """
     prompt = ChatPromptTemplate.from_template(template)
 
-    # 7. 构建链
+
+    # RAG 链
     rag_chain = (
-            {"context": retriever, "question": RunnablePassthrough()}
-            | prompt
-            | llm
-            | StrOutputParser()
+        {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
     )
 
     return rag_chain, "系统初始化完成"
 
 
 # ==========================================
-# Streamlit UI 界面逻辑
+# Streamlit UI
 # ==========================================
 st.set_page_config(page_title=ST_TITLE, page_icon="🏥")
 st.title(ST_TITLE)
 st.markdown("### 💊 基于医学知识库的智能问答系统")
 st.markdown("---")
 
-# 侧边栏：显示系统状态
 with st.sidebar:
     st.header("系统状态面板")
     with st.spinner("正在加载医学知识库..."):
@@ -111,41 +216,31 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
 
-# 初始化对话历史 (Session State)
-# 技术点：Web 是无状态的，必须手动维护上下文
+# 初始化对话历史
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# 1. 显示历史消息
+# 显示历史
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 2. 处理用户输入
+# 用户输入
 if prompt := st.chat_input("请输入关于中文医疗领域的问题..."):
-    # 显示用户的问题
     st.chat_message("user").markdown(prompt)
-    # 将问题存入历史
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # 3. 生成回答 (流式)
     with st.chat_message("assistant"):
-        response_placeholder = st.empty()  # 占位符
+        response_placeholder = st.empty()
         full_response = ""
-
-        # 调用 RAG 链 (Stream 模式)
         try:
-            # 这是一个生成器，会不断吐出字符
             for chunk in rag_chain.stream(prompt):
                 full_response += chunk
-                # 实时刷新界面，模拟打字机效果
                 response_placeholder.markdown(full_response + "▌")
-                # time.sleep(0.01) # 如果由于网络太快看不清流式，可以取消注释
-
             response_placeholder.markdown(full_response)
         except Exception as e:
-            st.error(f"发生错误: {e}")
-            full_response = f"抱歉，系统遇到故障: {e}"
+            error_msg = f"抱歉，系统遇到错误: {str(e)}"
+            st.error(error_msg)
+            full_response = error_msg
 
-    # 将 AI 的回答存入历史
     st.session_state.messages.append({"role": "assistant", "content": full_response})
