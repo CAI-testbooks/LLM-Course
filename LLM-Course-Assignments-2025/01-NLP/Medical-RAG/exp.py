@@ -126,7 +126,7 @@ def initialize_rag_system():
         tokenizer.pad_token = tokenizer.eos_token  # ← 关键修复！
 
     bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
+        #load_in_4bit=True,#必须注释，否则会出现梳理值naf 等问题
         bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.float16
     )
@@ -151,7 +151,7 @@ def initialize_rag_system():
         eos_token_id=tokenizer.eos_token_id,   # ← 推荐
         clean_up_tokenization_spaces=True
     )
-    llm_pipeline = HuggingFacePipeline(pipeline=pipe)
+    #llm_pipeline = HuggingFacePipeline(pipeline=pipe)
 
     #llm = HuggingFacePipeline(pipeline=pipe)
     
