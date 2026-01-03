@@ -21,8 +21,8 @@ dataset
 ## 模型架构
 当前采用适配器的方式来微调image_encoder，mask_decoder以及prompt_ecoder全量微调
 采用CBAM模块精细化特征图
-数据预处理当前仅使用缩放去对齐
-损失函数当前仅使用BCE
+数据预处理使用随机翻转、随机旋转以及大小缩放
+损失函数使用BCE、DICE、SSIM
 测试集评估采用Fmax、WeightedF、Emean、Emax、MAE
 
 ## 文件描述
@@ -38,6 +38,8 @@ metric.py: 评估函数
 finetuning.py: 训练
 predict_finetuning.py: 预测
 option.py: 参数配置
+loss.py: 损失函数
+transforms.py: 数据预处理
 app.py: UI展示
 
 ## 未来工作
@@ -46,13 +48,10 @@ app.py: UI展示
 
 更改适配器模块/多尺度融合Image Encoder的不同层/采取多分支解码器+特定模块融合方式（低层-边缘，高层-细节）
 
-采用dice、bce、ssim进行损失监督
-
 采用更多的数据集（DUT-OMRON、ECSSD、HKU-IS、PASCAL-S）
 
-数据预处理采取旋转、降低对比度等预操作
-
 UI界面更新
+
 
 
 
