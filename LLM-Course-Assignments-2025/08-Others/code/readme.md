@@ -4,13 +4,13 @@
 
 ## 🎯 模型架构
 
-![](.\picture\model.png)
+![](./picture/model.png)
 
 > **模型架构说明**：系统包含三个核心模块：EEG特征提取器、多模态扩散先验模型和分层注入图像生成器。EEG信号首先通过专门设计的编码器提取特征，然后分别送入5个独立的扩散先验模型（对应图像、文本和三个尺度的超像素特征），生成对应的CLIP嵌入。这些嵌入通过IP-Adapter分层注入到Stable Diffusion XL中，在不同网络深度融合不同模态的特征。
 
 ## ✨ 效果展示
 
-![origin](.\picture\origin.jpeg)![few](.\picture\few.jpeg)![middle](.\picture\middle.jpeg)![large](.\picture\large.jpeg)![generate](.\picture\generate.png)
+![origin](./picture/origin.jpeg)![few](./picture/few.jpeg)![middle](./picture/middle.jpeg)![large](./picture/large.jpeg)![generate](./picture/generate.png)
 
 > **图像说明**：从左上依次是原始图像，few级别超像素图，middle级别超像素图，large级别超像素图，最终生成图像。
 
@@ -202,4 +202,5 @@ code/
 - 感谢所有为本项目提供灵感和代码基础的开发者
 
 ------
+
 
