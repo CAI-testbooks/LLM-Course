@@ -53,20 +53,19 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # [调整 1] 将"清除记录"按钮上移，作为常用功能
+    # [保留布局] 将"清除记录"按钮上移
     if st.button("🔄 清除所有对话记录", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
-    # [调整 2] 利用空行制造“视觉下沉”效果，把设置挤到最下面
-    # 这里添加了一些空行，让下面的元素在视觉上靠近底部
+    # [保留布局] 利用空行制造“视觉下沉”效果，把设置挤到最下面
     st.markdown("<br>" * 15, unsafe_allow_html=True)
 
     st.markdown("---")
-    # [调整 3] 开发者选项现在位于最底部 (红框位置)
+    # [保留布局] 开发者选项位于最底部
     with st.expander("⚙️ 开发者选项 (高级设置)", expanded=False):
         st.caption("调整 RAG 检索灵敏度与调试模式")
-        threshold = st.slider("检索相关度阈值", 0.0, 1.0, 0.45, 0.05)
+        threshold = st.slider("检索相关度阈值", 0.0, 1.0, 0.35, 0.05)
         debug_mode = st.toggle("🛠️ 开启调试模式", value=False)
 
 st.title(ST_TITLE)
@@ -74,14 +73,17 @@ st.caption("专注自动控制原理专业问答。")
 
 
 # ==========================================
-# 🔥 核心修复：智能感知型 LaTeX 渲染引擎 (最终版 - 保持不变)
+# 🔥 核心修复：智能感知型 LaTeX 渲染引擎 (增强版)
 # ==========================================
 def format_latex(text):
     """
     ControlExpert 2.0 渲染引擎 - 智能感知版
     """
     # 1. 清理 Markdown 代码块干扰
-    text = text.replace("```latex", "").replace("```", "").replace("`", "")
+    # 【关键修改】不再简单删除反引号，而是将它们转换为 LaTeX 的 $ 符号
+    # 这样模型输出的 `s^2` (代码块) 会变成 $s^2$ (数学公式)
+    text = text.replace("```latex", "").replace("```", "")  # 先移除大块代码标记
+    text = text.replace("`", "$")  # 将行内代码标记转换为行内公式标记
 
     # 2. 统一 LaTeX 括号标准
     text = text.replace(r"\[", "\n$$\n")
@@ -161,8 +163,22 @@ if prompt := st.chat_input("请输入自控原理问题..."):
             st.session_state.messages.append({"role": "assistant", "content": response})
         else:
             context = "\n".join([doc.page_content for doc in valid_docs])
-            # 去重来源
-            sources = " | ".join(list(set([doc.metadata.get("source", "未知来源") for doc in valid_docs])))
+
+            # ================= [ 页码提取逻辑 ] =================
+            page_numbers = []
+            for doc in valid_docs:
+                # 获取 page 字段，如果没有则默认为 "未知"
+                # 强制转字符串，防止 int/str 混用导致报错
+                p = doc.metadata.get("page", "未知")
+                page_numbers.append(str(p))
+
+            # 去重并排序 (智能排序：优先按数字大小，否则按字典序)
+            unique_pages = sorted(list(set(page_numbers)), key=lambda x: int(x) if x.isdigit() else 0)
+            pages_str = ", ".join(unique_pages)
+
+            # 构造新的来源字符串
+            sources = f"教材原文 - 第 {pages_str} 页"
+            # ===================================================
 
             # 🚀 提示词增强
             system_prompt = r"""你是一个自动控制原理专家。
@@ -208,7 +224,7 @@ if prompt := st.chat_input("请输入自控原理问题..."):
             final_display = final_formatted + f"\n\n--- \n 📚 **参考来源**: {sources}"
             response_placeholder.markdown(final_display)
 
-            # 🔥 调试信息展示区 (集成在代码中，默认关闭，开关在侧边栏)
+            # 🔥 调试信息展示区 (已修复报错误报)
             if debug_mode:
                 with st.expander("🛠️ 工程师调试视图 (Raw Data)", expanded=True):
                     col1, col2 = st.columns(2)
@@ -218,9 +234,11 @@ if prompt := st.chat_input("请输入自控原理问题..."):
                     with col2:
                         st.caption("2. 清洗后数据 (Formatted)")
                         st.code(final_formatted, language="latex")
-                    if "$$" not in final_formatted:
-                        st.error("🚨 警告：清洗后的数据中未检测到 $$ 符号，渲染必将失败！")
+
+                    # 【修复】逻辑优化：只要有 $ 或 $$ 都算正常，不再误报红色警告
+                    if "$$" in final_formatted or "$" in final_formatted:
+                        st.success("✅ 检测到 LaTeX 数学符号，渲染引擎正常工作中。")
                     else:
-                        st.success("✅ 检测到 $$ 符号，MathJax 应该已激活。")
+                        st.info("ℹ️ 当前输出为纯文本（无数学公式），这是正常的。")
 
             st.session_state.messages.append({"role": "assistant", "content": final_display})
