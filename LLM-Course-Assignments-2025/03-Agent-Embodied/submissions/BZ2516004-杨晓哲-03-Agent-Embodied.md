@@ -71,3 +71,32 @@
 - 重播：支持 reset 后重新播放（payload reset / uav reset target 等）。
 - 产出：Gazebo 飞行投送流程可复现，日志/轨迹可记录。
 
+##2026-01-04
+-更新操作步骤：
+cd ~/ros-embodied-uav-agent/ros_ws
+source devel/setup.bash
+roslaunch uav_gazebo_demo agent_demo.launch
+
+
+rostopic pub -1 /agent/command std_msgs/String \
+"data: '起点等待5秒，起飞到1米，向前飞5米用时5秒，降到0.5米悬停3秒扔包，升到1米向前飞5米用时5秒，最后降落'"
+
+-重播（reset 后再来一遍）：
+cd ~/ros-embodied-uav-agent/ros_ws
+source devel/setup.bash
+
+# Gazebo 复位（两条都打更稳）
+rosservice call /gazebo/reset_world
+rosservice call /gazebo/reset_simulation
+
+# 你的工具复位（如果你已经加了 reset 服务）
+rosservice call /payload/reset
+rosservice call /uav/reset_target
+
+-然后再发一次指令：
+rostopic pub -1 /agent/command std_msgs/String "data: '再执行一次扔包任务'"
+
+-查看执行日志/轨迹（trace）：
+
+ls -lh ~/ros-embodied-uav-agent/ros_ws/src/uav_gazebo_demo/results/traces
+tail -n 30 ~/ros-embodied-uav-agent/ros_ws/src/uav_gazebo_demo/results/traces/*.jsonl
