@@ -1,65 +1,97 @@
 import os
-import time
-
-# 1. 设置 HuggingFace 镜像，防止下载模型超时
-os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
-
-# --- 关键修改点：更新了导入路径以匹配最新版 LangChain ---
-from langchain_community.document_loaders import TextLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter  # 新的门牌号
-from langchain_community.embeddings import HuggingFaceEmbeddings
+import fitz  # PyMuPDF
+from rapidocr_onnxruntime import RapidOCR
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.documents import Document
+
+# ================= 配置区域 =================
+PDF_PATH = "data/textbook.pdf"
+DB_PATH = "vector_db"
 
 
-def create_vector_db():
-    print("🚀 开始构建知识库...")
+PAGE_OFFSET = 10
 
-    # --- 第一步：加载多本书 ---
-    file_paths = ["data/textbook.txt", "data/workbook.txt"]
-    all_documents = []
 
-    for file_path in file_paths:
-        if os.path.exists(file_path):
-            print(f"📖 正在读取: {file_path} ...")
-            try:
-                loader = TextLoader(file_path, encoding="gb18030")
-                docs = loader.load()
-                all_documents.extend(docs)
-            except Exception as e:
-                print(f"❌ 读取错误 {file_path}: {e}")
-        else:
-            print(f"⚠️ 警告: 找不到文件 {file_path}，跳过。")
+# ===========================================
 
-    if not all_documents:
-        print("❌ 没有读取到任何数据，请检查 data 文件夹！")
-        return
+def load_pdf_with_offset(file_path):
+    print(f"🚀 [1/3] 正在加载: {file_path}")
+    print(f"    ℹ️ 已启用页码修正: PDF页码 - {PAGE_OFFSET} = 书本页码")
 
-    print(f"1. 数据加载完毕，共读取 {len(all_documents)} 个文档对象")
+    docs = []
+    ocr = RapidOCR()
 
-    # --- 第二步：文本切片 (Chunking) ---
-    print("2. 正在进行文本切片...")
+    with fitz.open(file_path) as pdf:
+        total = len(pdf)
+        print(f"    - 检测到 PDF 共 {total} 页")
+
+        for i, page in enumerate(pdf):
+            # ------------------------------------------------
+            # 核心修正逻辑
+            # ------------------------------------------------
+            physical_page = i + 1  # PDF文件的第几张纸
+            logical_page = physical_page - PAGE_OFFSET  # 修正后的书本页码
+
+            # 如果是前 10 页（目录、前言等），显示为 "前言-xx"
+            if logical_page <= 0:
+                page_label = f"前言/目录"
+            else:
+                page_label = f"{logical_page}"
+            # ------------------------------------------------
+
+            # 1. 尝试直接提取文字
+            text = page.get_text()
+
+            # 2. OCR 补救（防止扫描版读不出字）
+            if len(text.strip()) < 5:
+                try:
+                    pix = page.get_pixmap()
+                    img_data = pix.tobytes("png")
+                    result, _ = ocr(img_data)
+                    if result:
+                        text = "\n".join([line[1] for line in result])
+                except:
+                    pass
+
+            # 3. 存入 Document
+            if text.strip():
+                docs.append(Document(
+                    page_content=text,
+                    metadata={
+                        "source": os.path.basename(file_path),
+                        # 这里存入修正后的页码
+                        "page": page_label
+                    }
+                ))
+
+                # 打印日志让我们安心
+                if physical_page == 11:
+                    print(f"      > ✅ 验证点：PDF第11页 已标记为 -> 第 {page_label} 页")
+                elif physical_page % 50 == 0:
+                    print(f"      > 处理中：PDF第{physical_page}页 -> 第 {page_label} 页")
+
+    return docs
+
+
+def main():
+    # 1. 加载
+    docs = load_pdf_with_offset(PDF_PATH)
+    print(f"✅ 提取完成，共 {len(docs)} 页有效内容。")
+
+    # 2. 切分
+    print("✂️ [2/3] 正在切分文本...")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    texts = text_splitter.split_documents(all_documents)
-    print(f"✅ 切片完毕！原书合计被切分为 {len(texts)} 个知识片段")
+    splits = text_splitter.split_documents(docs)
 
-    # --- 第三步：加载嵌入模型 (Embedding) ---
-    print("3. 正在加载嵌入模型 (shibing624/text2vec-base-chinese)...")
-    print("   (首次运行会自动下载约 400MB 模型文件，请耐心等待...)")
-    # 使用国内镜像源下载模型
-    embeddings = HuggingFaceEmbeddings(
-        model_name="shibing624/text2vec-base-chinese",
-        model_kwargs={'device': 'cpu'}  # 建库用CPU足够快，且最稳定
-    )
-
-    # --- 第四步：向量化并存储 (Indexing) ---
-    print("4. 正在将知识片段转化为向量...")
-    db = FAISS.from_documents(texts, embeddings)
-
-    # 保存到本地
-    save_path = "data/control_knowledge_base"
-    db.save_local(save_path)
-    print(f"🎉 成功！知识库已构建完成，保存在: {save_path}")
+    # 3. 存入
+    print("💾 [3/3] 正在重建向量数据库...")
+    embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh-v1.5")
+    db = FAISS.from_documents(splits, embeddings)
+    db.save_local(DB_PATH)
+    print("🎉 数据库重建完毕！现在页码应该完全对上了。")
 
 
 if __name__ == "__main__":
-    create_vector_db()
+    main()
