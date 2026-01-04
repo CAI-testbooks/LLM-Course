@@ -27,4 +27,8 @@
   <node pkg="uav_gazebo_demo" type="executor_plan.py" name="executor_plan" output="screen">
     <param name="trace_dir" value="$(find uav_gazebo_demo)/results/traces"/>
   </node>
+  <!-- One-click replay -->
+  <node pkg="uav_gazebo_demo" type="replay_service.py" name="replay_service" output="screen">
+    <param name="wait_sec" value="0.5"/>
+  </node>
 </launch>
