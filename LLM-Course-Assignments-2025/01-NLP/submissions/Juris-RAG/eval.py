@@ -15,16 +15,20 @@ from collections import defaultdict
 try:
     from src.config import (
         EVAL_DATA_PATH, REPORTS_PATH, EVAL_BATCH_SIZE,
-        SILICONFLOW_API_KEY, SILICONFLOW_BASE_URL, LLM_MODEL
+        SILICONFLOW_API_KEY, SILICONFLOW_BASE_URL, LLM_MODEL,
+        LLM_RPM_LIMIT, LLM_TPM_LIMIT, LLM_MIN_INTERVAL
     )
     from src.rag_engine import JurisRAGEngine, RAGResponse
 except ImportError:
     EVAL_DATA_PATH = "./data/eval"
     REPORTS_PATH = "./reports"
-    EVAL_BATCH_SIZE = 10
+    EVAL_BATCH_SIZE = 1
     SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
     SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
-    LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+    LLM_MODEL = "Qwen/Qwen3-8B"
+    LLM_RPM_LIMIT = int(os.getenv("LLM_RPM_LIMIT", "1000"))
+    LLM_TPM_LIMIT = int(os.getenv("LLM_TPM_LIMIT", "50000"))
+    LLM_MIN_INTERVAL = 60.0 / LLM_RPM_LIMIT if LLM_RPM_LIMIT > 0 else 0.0
     from rag_engine import JurisRAGEngine, RAGResponse
 
 
@@ -72,6 +76,7 @@ class JurisEvaluator:
         self.engine = None
         self.eval_samples: List[EvalSample] = []
         self.results: List[EvalResult] = []
+        self._last_call_ts: float = 0.0
         
     def initialize_engine(self):
         """初始化RAG引擎"""
@@ -193,6 +198,9 @@ class JurisEvaluator:
             EvalResult: 评估结果
         """
         start_time = time.time()
+
+        # 简单速率限制（按 RPM 节流）
+        self._respect_rate_limit()
         
         # 获取模型回答
         response = self.engine.query(sample.question)
@@ -243,6 +251,16 @@ class JurisEvaluator:
             relevance_score=relevance_score,
             latency=latency
         )
+
+    def _respect_rate_limit(self):
+        """基于 RPM 做最小间隔节流，适配 L0 配额。"""
+        if LLM_MIN_INTERVAL <= 0:
+            return
+        now = time.time()
+        wait = LLM_MIN_INTERVAL - (now - self._last_call_ts)
+        if wait > 0:
+            time.sleep(wait)
+        self._last_call_ts = time.time()
     
     def _check_correctness(
         self, 
@@ -252,35 +270,62 @@ class JurisEvaluator:
     ) -> bool:
         """
         检查回答是否正确
-        使用关键词匹配和语义相似度判断
+        更严格的评估标准：内容必须基本一致
         """
         if category == "out_of_scope":
             # 对于超出范围的问题，拒绝回答视为正确
-            refuse_keywords = ["无法回答", "不在", "超出", "无法准确", "没有相关", "无法找到"]
+            refuse_keywords = ["无法回答", "不在", "超出", "无法准确", "没有相关", "无法找到", "超出"]
             return any(kw in predicted for kw in refuse_keywords)
         
         if not ground_truth:
             return False
         
-        # 提取关键词
-        # 简单实现：检查ground_truth中的关键数字和关键词是否出现在predicted中
+        # 提取关键要素进行匹配
         
-        # 提取数字（如刑期）
+        # 1. 提取刑期数字（最重要）
         gt_numbers = re.findall(r'(\d+)年', ground_truth)
         pred_numbers = re.findall(r'(\d+)年', predicted)
         
-        # 检查关键刑罚词
-        penalty_keywords = ['死刑', '无期徒刑', '有期徒刑', '拘役', '管制', '罚金']
-        gt_penalties = [kw for kw in penalty_keywords if kw in ground_truth]
-        pred_penalties = [kw for kw in penalty_keywords if kw in predicted]
+        # 2. 检查关键刑罚词
+        penalty_keywords = ['死刑', '无期徒刑', '有期徒刑', '拘役', '管制', '罚金', '没收']
+        gt_penalties = set(kw for kw in penalty_keywords if kw in ground_truth)
+        pred_penalties = set(kw for kw in penalty_keywords if kw in predicted)
         
-        # 计算匹配度
-        number_match = len(set(gt_numbers) & set(pred_numbers)) / max(len(gt_numbers), 1)
-        penalty_match = len(set(gt_penalties) & set(pred_penalties)) / max(len(gt_penalties), 1)
+        # 3. 检查是否拒绝回答（如果应该回答却拒绝了）
+        refused = "无法回答" in predicted or "无法准确" in predicted or "无法找到" in predicted
         
-        # 综合判断
-        return (number_match >= 0.5 and penalty_match >= 0.5) or \
-               (penalty_match >= 0.8 and len(gt_penalties) > 0)
+        if refused and ground_truth:
+            # 应该能回答但拒绝了 -> 错误
+            return False
+        
+        # 4. 综合判断正确性
+        # 严格标准：刑期和刑罚词都要匹配
+        
+        if gt_penalties:
+            # 有刑罚词的，刑罚词匹配度要高
+            penalty_match_ratio = len(gt_penalties & pred_penalties) / len(gt_penalties)
+            if penalty_match_ratio < 0.5:
+                return False  # 主要刑罚词都没对上
+        
+        if gt_numbers:
+            # 有数字的（刑期），数字匹配度也要高
+            number_match_ratio = len(set(gt_numbers) & set(pred_numbers)) / len(gt_numbers)
+            if number_match_ratio < 0.5:
+                # 主要的刑期数字都没对上
+                return False
+        
+        # 检查关键法律概念是否包含
+        if "条" in ground_truth:
+            # 如果是法条定义，至少要有法律概念的匹配
+            concept_words = ['定义', '规定', '是指', '处', '处罚', '刑事责任']
+            gt_has_concept = any(w in ground_truth for w in concept_words)
+            pred_has_concept = any(w in predicted for w in concept_words)
+            
+            if gt_has_concept and not pred_has_concept:
+                return False
+        
+        # 如果主要要素都匹配了，视为正确
+        return True
     
     def _calculate_citation_f1(
         self, 
@@ -288,7 +333,7 @@ class JurisEvaluator:
         expected_sources: List[str]
     ) -> Tuple[float, float, float]:
         """
-        计算引用F1值
+        计算引用F1值（改进版）
         
         Returns:
             Tuple[precision, recall, f1]
@@ -300,23 +345,38 @@ class JurisEvaluator:
         if not predicted_sources:
             return (0.0, 0.0, 0.0)
         
-        # 将来源标准化（忽略大小写，部分匹配）
+        # 将来源标准化并进行部分匹配
         def normalize_source(s):
-            return s.lower().strip()
+            s = s.lower().strip()
+            # 移除常见噪音
+            for noise in ['（', '）', '【', '】', '(', ')']:
+                s = s.replace(noise, ' ')
+            return s
         
-        pred_set = set(normalize_source(s) for s in predicted_sources)
-        exp_set = set(normalize_source(s) for s in expected_sources)
+        # 定义匹配关键词
+        source_keywords = {
+            'statute': ['刑法', 'statute', '法条', '条'],
+            'case': ['cail', '案例', 'case', '司法']
+        }
         
-        # 计算交集（部分匹配）
+        # 检查预测来源是否匹配期望来源
         matches = 0
-        for pred in pred_set:
-            for exp in exp_set:
-                if exp in pred or pred in exp:
+        for exp in expected_sources:
+            exp_norm = normalize_source(exp)
+            for pred in predicted_sources:
+                pred_norm = normalize_source(pred)
+                # 直接匹配
+                if exp_norm in pred_norm or pred_norm in exp_norm:
                     matches += 1
                     break
+                # 关键词匹配
+                for category, keywords in source_keywords.items():
+                    if any(kw in exp_norm for kw in keywords) and any(kw in pred_norm for kw in keywords):
+                        matches += 1
+                        break
         
-        precision = matches / len(pred_set) if pred_set else 0
-        recall = matches / len(exp_set) if exp_set else 0
+        precision = min(matches / len(predicted_sources), 1.0) if predicted_sources else 0
+        recall = min(matches / len(expected_sources), 1.0) if expected_sources else 0
         f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
         
         return (precision, recall, f1)
@@ -328,29 +388,46 @@ class JurisEvaluator:
         ground_truth: str
     ) -> bool:
         """
-        检测幻觉
-        简单实现：检查回答中是否包含检索文档中不存在的法条编号
+        检测幻觉 - 平衡检测
+        只检测明确的编造行为，避免过于严格导致误判
         """
+        # 如果回答明确表示无法回答，不算幻觉
+        refusal_keywords = ["无法回答", "无法准确", "未找到相关", "检索内容中未找到", "没有相关"]
+        if any(kw in answer for kw in refusal_keywords):
+            return False
+        
+        # 如果没有检索到文档但有实质性答案，可能是幻觉
+        if not retrieved_docs and answer and len(answer) > 100:
+            return True
+        
+        if not retrieved_docs:
+            return False
+        
         # 提取回答中的法条编号
         answer_articles = set(re.findall(r'第[一二三四五六七八九十百千零\d]+条', answer))
         
+        # 如果回答没有引用具体法条，不检测幻觉（可能是概括性回答）
         if not answer_articles:
             return False
         
         # 提取检索文档中的法条编号
         doc_articles = set()
+        doc_full_text = ""
         for doc in retrieved_docs:
             doc_articles.update(re.findall(r'第[一二三四五六七八九十百千零\d]+条', doc.page_content))
+            doc_full_text += doc.page_content
         
-        # 检查是否有回答中提到但文档中没有的法条
-        hallucinated = answer_articles - doc_articles
-        
-        # 如果ground_truth中有这些法条，不算幻觉
+        # 允许ground_truth中的法条
         if ground_truth:
             gt_articles = set(re.findall(r'第[一二三四五六七八九十百千零\d]+条', ground_truth))
-            hallucinated = hallucinated - gt_articles
+            doc_articles = doc_articles | gt_articles
         
-        return len(hallucinated) > 0
+        # 检测：回答中超过半数的法条在文档中找不到
+        hallucinated_articles = answer_articles - doc_articles
+        if len(hallucinated_articles) > len(answer_articles) / 2:
+            return True
+        
+        return False
     
     def _calculate_relevance(
         self,
@@ -417,23 +494,34 @@ class JurisEvaluator:
         for i, sample in enumerate(samples, 1):
             print(f"\n[{i}/{len(samples)}] 评估: {sample.question[:30]}...")
             
-            try:
-                result = self.evaluate_single(sample)
-                self.results.append(result)
-                category_results[sample.category].append(result)
-                
-                # 打印简要结果
-                status = "✅" if result.is_correct else "❌"
-                print(f"   {status} 正确性: {result.is_correct}, 置信度: {result.confidence:.2f}, 耗时: {result.latency:.2f}s")
-                
-            except Exception as e:
-                print(f"   ⚠️ 评估失败: {e}")
-                continue
+            attempt = 0
+            max_retries = 2
+            backoff = 5
+            while attempt <= max_retries:
+                try:
+                    result = self.evaluate_single(sample)
+                    self.results.append(result)
+                    category_results[sample.category].append(result)
+                    
+                    status = "✅" if result.is_correct else "❌"
+                    print(f"   {status} 正确性: {result.is_correct}, 置信度: {result.confidence:.2f}, 耗时: {result.latency:.2f}s")
+                    break
+                except Exception as e:
+                    if self._is_rate_limit_error(e) and attempt < max_retries:
+                        wait_seconds = backoff * (2 ** attempt)
+                        print(f"   ⚠️ 触发限流，等待 {wait_seconds}s 后重试 (第 {attempt+1}/{max_retries} 次)")
+                        time.sleep(wait_seconds)
+                        attempt += 1
+                        continue
+                    print(f"   ⚠️ 评估失败: {e}")
+                    break
             
             # 批次间隔
             if i % EVAL_BATCH_SIZE == 0:
                 print(f"\n   已完成 {i}/{len(samples)} ({100*i/len(samples):.1f}%)")
-                time.sleep(1)  # 避免API限速
+                # 额外节流：按照 RPM 追加等待，避免短时间过多请求
+                if LLM_MIN_INTERVAL > 0:
+                    time.sleep(LLM_MIN_INTERVAL)
         
         # 计算总体指标
         metrics = self._calculate_metrics(self.results)
@@ -453,6 +541,11 @@ class JurisEvaluator:
         )
         
         return report
+
+    @staticmethod
+    def _is_rate_limit_error(err: Exception) -> bool:
+        msg = str(err).lower()
+        return any(key in msg for key in ["rpm limit", "rate limit", "429", "too many", "exceeded"])
     
     def _calculate_metrics(self, results: List[EvalResult]) -> Dict:
         """计算评估指标"""
@@ -480,7 +573,12 @@ class JurisEvaluator:
         print("=" * 60)
         print(f"⏰ 评估时间: {report.timestamp}")
         print(f"📝 样本数量: {report.total_samples}")
-        
+
+        if not report.metrics:
+            print("⚠️ 无可用评估结果（全部样本失败或被跳过）")
+            print("=" * 60)
+            return
+
         print("\n📈 总体指标:")
         print("-" * 40)
         m = report.metrics

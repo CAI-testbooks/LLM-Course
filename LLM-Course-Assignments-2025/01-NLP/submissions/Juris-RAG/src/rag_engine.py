@@ -3,6 +3,7 @@ Juris-RAG 核心引擎模块
 支持多轮对话、长上下文、引用来源显示、拒绝不确定回答
 """
 import os
+import re
 from typing import List, Dict, Tuple, Optional, Generator
 from dataclasses import dataclass
 
@@ -40,11 +41,11 @@ except ImportError:
     # 默认回退配置
     DB_PATH = "./data/vector_db"
     EMBEDDING_MODEL = "BAAI/bge-m3"
-    LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+    LLM_MODEL = "Qwen/Qwen3-8B"
     SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
     SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
-    RETRIEVAL_TOP_K = 5
-    RETRIEVAL_SCORE_THRESHOLD = 0.3
+    RETRIEVAL_TOP_K = 8
+    RETRIEVAL_SCORE_THRESHOLD = 0.2
     LLM_TEMPERATURE = 0.1
     LLM_MAX_TOKENS = 2048
     MAX_HISTORY_TURNS = 10
@@ -115,14 +116,148 @@ class JurisRAGEngine:
             embedding_function=self.embeddings
         )
         
-        # 配置检索器
+        # 使用更宽松的相似度检索，后续通过后处理过滤
         self.retriever = self.vectorstore.as_retriever(
-            search_type="similarity_score_threshold",
+            search_type="similarity",
             search_kwargs={
-                "k": RETRIEVAL_TOP_K,
-                "score_threshold": RETRIEVAL_SCORE_THRESHOLD
+                "k": RETRIEVAL_TOP_K * 2  # 检索更多，后处理筛选
             }
         )
+    
+    def _extract_crime_keywords(self, query: str) -> List[str]:
+        """
+        从查询中提取罪名关键词，返回多个增强查询
+        """
+        # 常见罪名关键词映射 - 包含条款号和核心描述词
+        crime_mappings = {
+            "故意杀人": ["第二百三十二条 故意杀人 死刑", "侵犯公民人身权利 故意杀人"],
+            "杀人": ["第二百三十二条 故意杀人 死刑", "侵犯公民人身权利"],
+            "故意伤害": ["第二百三十四条 故意伤害 轻伤 重伤"],
+            "伤害": ["第二百三十四条 故意伤害"],
+            "盗窃": ["第二百六十四条 盗窃 数额较大 侵犯财产罪"],
+            "抢劫": ["第二百六十三条 抢劫 暴力 侵犯财产罪"],
+            "诈骗": ["第二百六十六条 诈骗 数额较大"],
+            "正当防卫": ["第二十条 正当防卫 防卫过当 不负刑事责任"],
+            "防卫": ["第二十条 正当防卫 防卫过当"],
+            "自首": ["第六十七条 自首 从轻处罚 减轻处罚"],
+            "累犯": ["第六十五条 累犯 从重处罚"],
+            "未成年": ["第十七条 未成年人 刑事责任年龄"],
+            "交通肇事": ["第一百三十三条 交通肇事 逃逸 危害公共安全"],
+            "醉驾": ["第一百三十三条之一 危险驾驶"],
+            "危险驾驶": ["第一百三十三条之一 危险驾驶 醉酒"],
+            "贪污": ["第三百八十二条 贪污 国家工作人员"],
+            "受贿": ["第三百八十五条 受贿 国家工作人员"],
+            "毒品": ["第三百四十七条 走私 贩卖 运输 制造毒品"],
+            "强奸": ["第二百三十六条 强奸 暴力"],
+            "绑架": ["第二百三十九条 绑架 勒索财物"],
+            "抢夺": ["第二百六十七条 抢夺"],
+            "敲诈勒索": ["第二百七十四条 敲诈勒索"],
+            "侵占": ["第二百七十条 侵占"],
+        }
+        
+        enhanced_queries = [query]  # 原始查询始终保留
+        
+        for keyword, expansions in crime_mappings.items():
+            if keyword in query:
+                enhanced_queries.extend(expansions)
+                break
+        
+        return enhanced_queries
+    
+    def _hybrid_retrieve(self, query: str, k: int = RETRIEVAL_TOP_K) -> List[Document]:
+        """
+        混合检索策略：分别检索法条和案例，然后合并
+        使用多查询增强 + 关键词过滤提高法条检索精度
+        
+        ChromaDB的分数越低表示越相关（L2距离）
+        """
+        statute_docs = []
+        case_docs = []
+        seen_doc_ids = set()
+        
+        statute_k = max(4, k // 2 + 1)  # 法条数量
+        case_k = k - statute_k + 2  # 案例数量
+        
+        # 1. 法条检索：使用多个增强查询
+        enhanced_queries = self._extract_crime_keywords(query)
+        
+        for eq in enhanced_queries:
+            try:
+                results = self.vectorstore.similarity_search_with_score(
+                    eq,
+                    k=statute_k * 2,
+                    filter={"type": "statute"}
+                )
+                
+                for doc, score in results:
+                    doc_id = doc.metadata.get("doc_id", id(doc))
+                    if doc_id not in seen_doc_ids:
+                        seen_doc_ids.add(doc_id)
+                        doc.metadata["relevance_score"] = score
+                        statute_docs.append(doc)
+                        
+            except Exception as e:
+                print(f"[警告] 法条检索失败: {e}")
+        
+        # 2. 案例检索：使用原始查询
+        try:
+            case_results = self.vectorstore.similarity_search_with_score(
+                query, 
+                k=case_k * 2,
+                filter={"type": "case"}
+            )
+            
+            for doc, score in case_results:
+                doc_id = doc.metadata.get("doc_id", id(doc))
+                if doc_id not in seen_doc_ids:
+                    seen_doc_ids.add(doc_id)
+                    doc.metadata["relevance_score"] = score
+                    case_docs.append(doc)
+                    
+        except Exception as e:
+            print(f"[警告] 案例检索失败: {e}")
+        
+        # 3. 关键词重排序：优先包含查询关键词的法条
+        def get_keyword_score(doc):
+            """计算关键词匹配得分"""
+            base_score = doc.metadata.get("relevance_score", 999)
+            content = doc.page_content.lower()
+            
+            # 提取查询中的关键词
+            keywords = ["故意杀人", "盗窃", "抢劫", "诈骗", "正当防卫", "自首", 
+                       "交通肇事", "故意伤害", "强奸", "绑架", "未成年"]
+            
+            bonus = 0
+            for kw in keywords:
+                if kw in query and kw in content:
+                    bonus -= 1.0  # 大幅提高排名（降低分数）
+                    break
+            
+            # 额外奖励：查询中的数字词（如"232条"）
+            article_nums = re.findall(r'第[一二三四五六七八九十百千零\d]+条', query)
+            for num in article_nums:
+                if num in content:
+                    bonus -= 2.0  # 精确条款匹配，最高优先级
+            
+            return base_score + bonus
+        
+        # 对法条进行重排序
+        statute_docs.sort(key=get_keyword_score)
+        case_docs.sort(key=lambda d: d.metadata.get("relevance_score", 999))
+        
+        # 4. 合并结果：法条优先
+        final_docs = []
+        final_docs.extend(statute_docs[:statute_k])
+        final_docs.extend(case_docs[:case_k])
+        
+        # 5. 回退检索
+        if len(final_docs) == 0:
+            results = self.vectorstore.similarity_search_with_score(query, k=k)
+            for doc, score in results:
+                doc.metadata["relevance_score"] = score
+                final_docs.append(doc)
+        
+        return final_docs[:k]
     
     def _init_llm(self):
         """初始化大语言模型"""
@@ -156,27 +291,31 @@ class JurisRAGEngine:
             self.llm, self.retriever, contextualize_q_prompt
         )
         
-        # 2. 法律问答链 - 核心Prompt
-        qa_system_prompt = """你是"法律智能助手"，一个专业的中国法律问答AI。你的职责是基于检索到的法律文档，为用户提供准确、专业的法律咨询。
+        # 2. 法律问答链 - 核心Prompt（优化版）
+        qa_system_prompt = """你是"法律智能助手"，一个专业的中国刑法问答AI。基于检索到的法条和案例回答问题。
 
-【核心原则】
-1. **严格基于证据**：只能根据【检索到的上下文】中的信息回答，绝不编造或推测
-2. **明确引用来源**：每个重要论述后必须标注来源，格式为 [来源X]
-3. **承认不确定性**：如果检索内容不足以回答问题，必须明确说明
+【回答原则】
+1. **优先使用法条**：如果检索到了《刑法》条文，必须优先引用法条内容
+2. **案例作为补充**：案例用于说明实际判决情况，但不能替代法条
+3. **如实作答**：只基于检索内容回答，无相关内容则明确说明
 
-【回答格式要求】
-1. 先给出直接回答（1-2句话概括）
-2. 再分点详细说明（如涉及法条，逐条引用；如涉及案例，说明判例）
-3. 最后给出注意事项或建议
+【回答格式】
+**直接回答**：先用1-2句话概括答案（基于法条）
 
-【引用格式】
-- 法条引用：根据《刑法》第X条规定，... [来源1]
-- 案例引用：在类似案例中，... [来源2]
+**法律依据**：
+- 引用检索到的法条原文，标注[来源X]
+- 如有多个相关条款，分别列出
 
-【特殊情况处理】
-- 如果问题超出法律范围，礼貌说明并建议咨询专业律师
-- 如果检索结果不相关或不充分，直接说"根据现有法律数据库，无法准确回答此问题"
-- 不要编造不存在的法条或案例
+**案例参考**（如有）：
+- 简要说明相关案例的判决结果
+
+**提示**：说明可能的局限或建议
+
+【重要规则】
+- 检索到法条内容时，必须直接引用原文
+- 法条编号和内容必须与检索文档完全一致
+- 如果检索内容不包含问题所问的罪名/情况，请直接说明"检索内容中未找到相关规定"
+- 不要编造或推测法条内容
 
 【检索到的上下文】
 {context}"""
@@ -207,35 +346,96 @@ class JurisRAGEngine:
         """从检索文档中提取引用信息"""
         citations = []
         for i, doc in enumerate(docs):
+            # 尝试从多个字段获取相似度分数
+            score = (
+                doc.metadata.get("relevance_score") or
+                doc.metadata.get("score") or
+                doc.metadata.get("_score") or
+                0.7  # 默认给予中等相关性
+            )
+            
+            # 改进来源标注 - 包含更多元数据信息
+            source_parts = [doc.metadata.get("source", "未知来源")]
+            
+            # 添加类型信息
+            doc_type = doc.metadata.get("type", "unknown")
+            if doc_type == "statute":
+                article = doc.metadata.get("article", "")
+                if article:
+                    source_parts.append(f"({article})")
+            elif doc_type == "case":
+                accusation = doc.metadata.get("accusation", "")
+                case_id = doc.metadata.get("case_id", "")
+                if accusation:
+                    source_parts.append(f"【{accusation}】")
+                if case_id:
+                    source_parts.append(f"(案号:{case_id})")
+            
+            source_display = "".join(source_parts)
+            
             citation = Citation(
-                source=doc.metadata.get("source", "未知来源"),
-                doc_type=doc.metadata.get("type", "unknown"),
+                source=source_display,
+                doc_type=doc_type,
                 content=doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
-                relevance_score=doc.metadata.get("relevance_score", 0.0),
+                relevance_score=float(score),
                 metadata=doc.metadata
             )
             citations.append(citation)
         return citations
+
+    def _attach_similarity_scores(self, query: str, docs: List[Document]) -> List[Document]:
+        """为检索到的文档补充相似度分数。"""
+        if not docs:
+            return docs
+        try:
+            # 预取更多候选，以便覆盖 context 中的文档
+            k = max(len(docs), RETRIEVAL_TOP_K * 2)
+            scored = self.vectorstore.similarity_search_with_score(query, k=k)
+            score_map = {}
+            for d, score in scored:
+                doc_id = d.metadata.get("doc_id")
+                if doc_id:
+                    score_map[doc_id] = score
+            for doc in docs:
+                doc_id = doc.metadata.get("doc_id")
+                if doc_id and doc_id in score_map:
+                    doc.metadata["relevance_score"] = score_map[doc_id]
+            return docs
+        except Exception:
+            return docs
     
     def _calculate_confidence(self, docs: List[Document]) -> float:
         """计算回答置信度"""
         if not docs:
             return 0.0
         
-        # 基于检索文档数量和相关性计算置信度
-        doc_count_score = min(len(docs) / RETRIEVAL_TOP_K, 1.0)
+        # ChromaDB的分数越低越相关，需要转换
+        scores = []
+        has_statute = False
         
-        # 如果有相关性分数，使用平均分数
-        scores = [doc.metadata.get("relevance_score", 0.5) for doc in docs]
-        avg_score = sum(scores) / len(scores) if scores else 0.5
+        for doc in docs:
+            raw_score = doc.metadata.get("relevance_score", 1.0)
+            # 转换为0-1的相关性分数（分数越低越相关）
+            relevance = max(0, 1 - raw_score / 2)
+            scores.append(relevance)
+            
+            if doc.metadata.get("type") == "statute":
+                has_statute = True
         
-        # 综合置信度
-        confidence = 0.4 * doc_count_score + 0.6 * avg_score
-        return round(confidence, 2)
+        max_score = max(scores) if scores else 0.0
+        avg_score = sum(scores) / len(scores) if scores else 0.0
+        
+        # 如果有法条文档，置信度提升
+        statute_bonus = 0.1 if has_statute else 0
+        
+        # 综合计算置信度
+        confidence = 0.4 * max_score + 0.4 * avg_score + 0.2 * min(len(docs) / RETRIEVAL_TOP_K, 1.0) + statute_bonus
+        
+        return round(min(confidence, 0.95), 2)
     
     def query(self, question: str) -> RAGResponse:
         """
-        处理用户查询
+        处理用户查询（使用混合检索策略）
         
         Args:
             question: 用户问题
@@ -246,14 +446,72 @@ class JurisRAGEngine:
         # 格式化历史对话
         chat_history = self._format_chat_history()
         
-        # 调用RAG链
-        response = self.rag_chain.invoke({
-            "input": question,
-            "chat_history": chat_history
-        })
+        # 使用混合检索策略获取文档
+        docs = self._hybrid_retrieve(question, k=RETRIEVAL_TOP_K)
         
-        answer = response.get("answer", "")
-        docs = response.get("context", [])
+        # 如果没有检索到有效文档
+        if not docs:
+            self.chat_history.append((question, UNCERTAIN_RESPONSE))
+            return RAGResponse(
+                answer=UNCERTAIN_RESPONSE,
+                citations=[],
+                confidence=0.0,
+                is_uncertain=True,
+                retrieved_docs=[]
+            )
+        
+        # 构建上下文
+        context_parts = []
+        for i, doc in enumerate(docs, 1):
+            doc_type = doc.metadata.get("type", "unknown")
+            source = doc.metadata.get("source", "未知来源")
+            
+            if doc_type == "statute":
+                article = doc.metadata.get("article", "")
+                context_parts.append(f"[来源{i}] 【法条】{source} {article}\n{doc.page_content}")
+            else:
+                accusation = doc.metadata.get("accusation", "")
+                context_parts.append(f"[来源{i}] 【案例】{source}（{accusation}）\n{doc.page_content}")
+        
+        context_text = "\n\n".join(context_parts)
+        
+        # 直接调用LLM生成回答
+        from langchain_core.messages import HumanMessage, SystemMessage
+        
+        qa_prompt = f"""你是"法律智能助手"，一个专业的中国刑法问答AI。基于检索到的法条和案例回答问题。
+
+【回答原则】
+1. **优先使用法条**：如果检索到了《刑法》条文，必须优先引用法条内容
+2. **案例作为补充**：案例用于说明实际判决情况，但不能替代法条
+3. **如实作答**：只基于检索内容回答，无相关内容则明确说明
+
+【回答格式】
+**直接回答**：先用1-2句话概括答案（基于法条）
+
+**法律依据**：
+- 引用检索到的法条原文，标注[来源X]
+- 如有多个相关条款，分别列出
+
+**案例参考**（如有相关案例）：
+- 简要说明相关案例的判决结果
+
+**提示**：说明可能的局限或建议
+
+【重要规则】
+- 检索到法条内容时，必须直接引用原文
+- 法条编号和内容必须与检索文档完全一致
+- 如果检索内容不包含问题所问的罪名/情况，请直接说明"检索内容中未找到相关规定"
+
+【检索到的上下文】
+{context_text}
+
+【用户问题】
+{question}"""
+        
+        messages = [HumanMessage(content=qa_prompt)]
+        
+        response = self.llm.invoke(messages)
+        answer = response.content
         
         # 提取引用
         citations = self._extract_citations(docs)
@@ -299,6 +557,7 @@ class JurisRAGEngine:
             "input": question,
             "chat_history": chat_history
         })
+        docs = self._attach_similarity_scores(question, docs)
         
         citations = self._extract_citations(docs)
         confidence = self._calculate_confidence(docs)

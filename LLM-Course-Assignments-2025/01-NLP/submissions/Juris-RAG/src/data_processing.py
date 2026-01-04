@@ -109,8 +109,8 @@ class LegalDataProcessor:
     
     def load_statutes(self, file_path: str) -> List[Document]:
         """
-        加载法条数据
-        支持按条款进行智能分割
+        加载法条数据 - 按单个条款进行细粒度分块
+        每个条款单独作为一个文档，确保检索精度
         """
         print(f"📄 正在加载法条: {file_path}")
         docs = []
@@ -122,36 +122,161 @@ class LegalDataProcessor:
         with open(file_path, 'r', encoding='utf-8') as f:
             text = f.read()
         
-        # 清洗文本
-        text = self.clean_text(text)
+        # 预处理：规范化空白字符
+        text = re.sub(r'　', ' ', text)  # 全角空格转半角
+        text = re.sub(r'\t', ' ', text)
         
-        # 尝试按法条编号分割
-        # 匹配 "第X条" 或 "第XX条" 格式
-        article_pattern = r'(第[一二三四五六七八九十百千零\d]+条[之的]?[一二三四五六七八九十]*)'
+        # 按条款分割 - 使用正则匹配 "第X条" 开头的段落
+        # 匹配格式：第X条 或 第X条之X
+        article_pattern = r'(第[一二三四五六七八九十百千零\d]+条(?:之[一二三四五六七八九十]*)?)\s*'
         
-        # 使用分割器分割
-        chunks = self.text_splitter.split_text(text)
+        # 分割文本，保留分隔符
+        parts = re.split(f'({article_pattern})', text)
         
-        for i, chunk in enumerate(chunks):
-            # 提取法条编号（如果有）
-            article_match = re.search(article_pattern, chunk)
-            article_num = article_match.group(1) if article_match else f"段落{i+1}"
+        current_article = None
+        current_content = []
+        chapter_info = ""  # 当前章节信息
+        
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
             
-            doc_id = self.generate_doc_id(chunk, "刑法")
+            # 检测章节标题（如 "第四章 侵犯公民人身权利、民主权利罪"）
+            chapter_match = re.match(r'(第[一二三四五六七八九十]+(?:编|章|节)[^\n]*)', part)
+            if chapter_match:
+                chapter_info = chapter_match.group(1)
+                continue
             
-            docs.append(Document(
-                page_content=chunk,
-                metadata={
-                    "source": "中华人民共和国刑法",
-                    "type": "statute",
-                    "article": article_num,
-                    "doc_id": doc_id,
-                    "chunk_index": i
-                }
-            ))
+            # 检测条款号
+            article_match = re.match(article_pattern, part)
+            if article_match:
+                # 保存之前的条款
+                if current_article and current_content:
+                    content_text = ' '.join(current_content)
+                    content_text = self.clean_text(content_text)
+                    
+                    if len(content_text) > 20:  # 过滤过短的内容
+                        doc_id = self.generate_doc_id(content_text, "刑法")
+                        
+                        # 在内容前添加条款号和章节信息，增强检索效果
+                        full_content = f"{current_article} {content_text}"
+                        if chapter_info:
+                            full_content = f"【{chapter_info}】{full_content}"
+                        
+                        docs.append(Document(
+                            page_content=full_content,
+                            metadata={
+                                "source": "中华人民共和国刑法",
+                                "type": "statute",
+                                "article": current_article,
+                                "chapter": chapter_info,
+                                "doc_id": doc_id,
+                                "chunk_index": len(docs)
+                            }
+                        ))
+                
+                # 开始新条款
+                current_article = article_match.group(1)
+                current_content = []
+            else:
+                # 非条款号的内容，添加到当前条款
+                if current_article:
+                    current_content.append(part)
+                elif not any(kw in part for kw in ['目录', '目　　录', '第一编', '第二编']):
+                    # 前言部分（修订历史等），也可以保留
+                    if len(part) > 100:
+                        doc_id = self.generate_doc_id(part[:100], "刑法前言")
+                        docs.append(Document(
+                            page_content=self.clean_text(part),
+                            metadata={
+                                "source": "中华人民共和国刑法",
+                                "type": "statute",
+                                "article": "前言",
+                                "chapter": "",
+                                "doc_id": doc_id,
+                                "chunk_index": len(docs)
+                            }
+                        ))
         
-        print(f"✅ 加载法条完成，共 {len(docs)} 个文档块")
-        return docs
+        # 保存最后一个条款
+        if current_article and current_content:
+            content_text = ' '.join(current_content)
+            content_text = self.clean_text(content_text)
+            
+            if len(content_text) > 20:
+                doc_id = self.generate_doc_id(content_text, "刑法")
+                full_content = f"{current_article} {content_text}"
+                if chapter_info:
+                    full_content = f"【{chapter_info}】{full_content}"
+                
+                docs.append(Document(
+                    page_content=full_content,
+                    metadata={
+                        "source": "中华人民共和国刑法",
+                        "type": "statute",
+                        "article": current_article,
+                        "chapter": chapter_info,
+                        "doc_id": doc_id,
+                        "chunk_index": len(docs)
+                    }
+                ))
+        
+        # 对于过长的条款，进行二次分割
+        final_docs = []
+        max_length = 800  # 单个chunk最大长度
+        
+        for doc in docs:
+            if len(doc.page_content) > max_length:
+                # 按句子分割长条款
+                sentences = re.split(r'([。；])', doc.page_content)
+                
+                current_chunk = ""
+                chunk_index = 0
+                
+                for i in range(0, len(sentences), 2):
+                    sentence = sentences[i]
+                    punct = sentences[i+1] if i+1 < len(sentences) else ""
+                    
+                    if len(current_chunk) + len(sentence) + len(punct) > max_length:
+                        if current_chunk:
+                            new_doc = Document(
+                                page_content=current_chunk.strip(),
+                                metadata={
+                                    **doc.metadata,
+                                    "article": f"{doc.metadata['article']}(第{chunk_index+1}部分)",
+                                    "doc_id": f"{doc.metadata['doc_id']}_{chunk_index}"
+                                }
+                            )
+                            final_docs.append(new_doc)
+                            chunk_index += 1
+                        current_chunk = sentence + punct
+                    else:
+                        current_chunk += sentence + punct
+                
+                if current_chunk.strip():
+                    new_doc = Document(
+                        page_content=current_chunk.strip(),
+                        metadata={
+                            **doc.metadata,
+                            "article": f"{doc.metadata['article']}(第{chunk_index+1}部分)" if chunk_index > 0 else doc.metadata['article'],
+                            "doc_id": f"{doc.metadata['doc_id']}_{chunk_index}" if chunk_index > 0 else doc.metadata['doc_id']
+                        }
+                    )
+                    final_docs.append(new_doc)
+            else:
+                final_docs.append(doc)
+        
+        print(f"✅ 加载法条完成，共 {len(final_docs)} 个文档块")
+        
+        # 打印一些示例
+        sample_articles = ["第二百三十二条", "第二百六十四条", "第二十条", "第六十七条"]
+        print("📋 关键法条示例:")
+        for doc in final_docs[:]:
+            if doc.metadata.get("article") in sample_articles:
+                print(f"   - {doc.metadata['article']}: {doc.page_content[:60]}...")
+        
+        return final_docs
     
     def load_cail_cases(self, file_path: str, limit: int = None) -> List[Document]:
         """

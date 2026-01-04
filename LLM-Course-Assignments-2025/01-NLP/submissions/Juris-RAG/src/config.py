@@ -25,30 +25,33 @@ SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
 EMBEDDING_MODEL = "BAAI/bge-m3"
 EMBEDDING_DIMENSION = 1024  # BGE-M3的向量维度
 
-# LLM模型 - 使用Qwen2.5，支持长上下文
-LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
-# 可选更大的模型以获得更好效果
+# LLM模型 - 使用Qwen3-8B，支持128K长上下文，免费
+LLM_MODEL = "Qwen/Qwen3-8B"
+# 备选模型
+# LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 # LLM_MODEL = "Qwen/Qwen2.5-14B-Instruct"
-# LLM_MODEL = "Qwen/Qwen2.5-32B-Instruct"
 
 # ==================== RAG参数配置 ====================
 # 文本分块参数
-CHUNK_SIZE = 500  # 每个文本块的大小
-CHUNK_OVERLAP = 100  # 文本块之间的重叠
+CHUNK_SIZE = 800  # 每个文本块的大小（增大以保持法条完整）
+CHUNK_OVERLAP = 150  # 文本块之间的重叠
 
 # 检索参数
-RETRIEVAL_TOP_K = 5  # 检索返回的文档数量
-RETRIEVAL_SCORE_THRESHOLD = 0.3  # 相似度阈值，低于此值的结果将被过滤
+RETRIEVAL_TOP_K = 8  # 检索返回的文档数量
+RETRIEVAL_SCORE_THRESHOLD = 0.3  # 相似度阈值（适度降低以检索到法条）
+
+# 混合检索权重：优先检索法条
+STATUTE_BOOST = 1.5  # 法条文档的权重提升
 
 # 重排序参数（预留，尚未在引擎中启用）
 ENABLE_RERANK = False
 RERANK_TOP_K = 3  # 重排序后保留的文档数量
 
 # ==================== 长上下文配置 ====================
-# Qwen2.5支持32k+上下文
-MAX_CONTEXT_LENGTH = 32768
-MAX_INPUT_LENGTH = 16384  # 用户输入的最大长度
-MAX_HISTORY_TURNS = 10  # 保留的历史对话轮数
+# Qwen3-8B支持128k上下文
+MAX_CONTEXT_LENGTH = 128000
+MAX_INPUT_LENGTH = 32768  # 用户输入的最大长度
+MAX_HISTORY_TURNS = 15  # 保留的历史对话轮数
 
 # ==================== LLM生成参数 ====================
 LLM_TEMPERATURE = 0.1  # 法律场景需要严谨，温度设低
@@ -57,7 +60,7 @@ LLM_TOP_P = 0.9
 
 # ==================== 置信度与拒答配置 ====================
 # 当检索结果相似度低于此阈值时，拒绝回答
-CONFIDENCE_THRESHOLD = 0.4
+CONFIDENCE_THRESHOLD = 0.35
 # 不确定回答的提示语
 UNCERTAIN_RESPONSE = """抱歉，根据现有法律数据库，我无法准确回答此问题。
 
@@ -93,15 +96,22 @@ APP_DESCRIPTION = """
 """
 
 # ==================== 评估配置 ====================
-EVAL_BATCH_SIZE = 10
+# 为避免 L0 (RPM=1000, TPM=50000) 触发限流，默认单条评估一批
+EVAL_BATCH_SIZE = int(os.getenv("EVAL_BATCH_SIZE", "1"))
 EVAL_METRICS = ["accuracy", "citation_f1", "hallucination_rate", "relevance"]
 
 # ==================== 向量化节流配置 ====================
 # 可通过环境变量覆盖，避免触发RPM/TPM限制
-EMBED_RPM_LIMIT = int(os.getenv("EMBED_RPM_LIMIT", "2000"))
-EMBED_TPM_LIMIT = int(os.getenv("EMBED_TPM_LIMIT", "500000"))
+EMBED_RPM_LIMIT = int(os.getenv("EMBED_RPM_LIMIT", "1000"))
+EMBED_TPM_LIMIT = int(os.getenv("EMBED_TPM_LIMIT", "50000"))
 EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", "20"))
 EMBED_SLEEP_SECONDS = float(os.getenv("EMBED_SLEEP_SECONDS", "0.1"))
 EMBED_MAX_RETRIES = int(os.getenv("EMBED_MAX_RETRIES", "5"))
 EMBED_BACKOFF_SECONDS = float(os.getenv("EMBED_BACKOFF_SECONDS", "10"))
 EMBED_BACKOFF_MAX_SECONDS = float(os.getenv("EMBED_BACKOFF_MAX_SECONDS", "120"))
+
+# ==================== LLM 调用节流配置 ====================
+# 适配 SiliconFlow L0 默认限额：RPM=1000, TPM=50000
+LLM_RPM_LIMIT = int(os.getenv("LLM_RPM_LIMIT", "1000"))
+LLM_TPM_LIMIT = int(os.getenv("LLM_TPM_LIMIT", "50000"))
+LLM_MIN_INTERVAL = 60.0 / LLM_RPM_LIMIT if LLM_RPM_LIMIT > 0 else 0.0
