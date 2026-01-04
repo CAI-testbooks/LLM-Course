@@ -15,7 +15,7 @@ st.set_page_config(page_title="医疗 RAG 助手", page_icon="🏥", layout="wid
 CHROMA_PATH = "./chroma_db"
 COLLECTION_NAME = "medical_rag"
 EMBED_MODEL_PATH = "./BAAI/bge-m3"
-LLM_MODEL_PATH = "./Qwen/Qwen2.5-7B-Instruct"
+LLM_MODEL_PATH = "./Qwen/Qwen-Medical-Merged"
 
 # ================= 模型加载=================
 @st.cache_resource
