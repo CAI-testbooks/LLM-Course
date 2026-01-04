@@ -461,6 +461,16 @@ class RAGInterface:
                         - 支持跨文档的综合性问题
                         """
                     )
+                # === 右侧（或下方）：检索详情展示 (新增功能) ===
+                with gr.Column(scale=1):
+                    gr.Markdown("### 🔍 RAG 检索透视")
+                    gr.Markdown("这里展示系统检索到的原始文档片段，用于验证回答依据。")
+
+                    # 使用 JSON 组件展示结构化的检索结果
+                    retrieval_display = gr.JSON(
+                        label="当前问题的检索上下文 (Retrieved Context)",
+                        value=[],
+                    )
 
             # 事件绑定
             upload_btn.click(
