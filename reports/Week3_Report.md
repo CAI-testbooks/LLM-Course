@@ -52,15 +52,15 @@
 
 系统能够将引用来源准确指向教材页码：
 
-![content](../images/content.png)
+![content](./images/content.png)
 
-> ![content0](../images/content0.png)
+> ![content0](./images/content0.png)
 
 ### 2. Web 端问答效果
 
 系统能够使用Latex格式清晰显示公式：
 
-> ![formula](../images/formula.png)
+> ![formula](./images/formula.png)
 
 ### 3. 量化评估报告
 
