@@ -54,13 +54,13 @@
 
 ![content](./images/content.png)
 
-> ![content0](./images/content0.png)
+> ![content0](D:/workerspace/control_qa/reports/images/content0.png)
 
 ### 2. Web 端问答效果
 
 系统能够使用Latex格式清晰显示公式：
 
-> ![formula](./images/formula.png)
+> ![formula](D:/workerspace/control_qa/reports/images/formula.png)
 
 ### 3. 量化评估报告
 
@@ -71,6 +71,8 @@
 | **Recall (召回率)** | 0.4821                | **0.5897**              | **+22.31%** |
 | **F1 Score**        | 0.1976                | **0.2946**              | **+49.13%** |
 | **幻觉拦截率**      | 0%                    | **100%**                | /           |
+
+![evluation](./images/evluation.jpg)
 
 **数据分析**：
 
@@ -91,4 +93,4 @@
 
 ## 六、 实验总结
 
-本次实验成功完成了一个全栈式的垂直领域 RAG 系统开发。ControlExpert 2.0 不仅实现了从数据清洗到前端展示的完整闭环，更在**工程细节**（如页码修正、公式渲染）和**安全性**（防幻觉拦截）上达到了较高的完成度。评估数据表明，该系统相比纯大模型在专业准确度上有显著提升，具备实际辅助教学的应用价值。
+本次实验成功完成了一个全栈式的垂直领域 RAG 系统开发。ControlExpert 2.0 不仅实现了从数据清洗到前端展示的完整闭环，还在**工程细节**（如页码修正、公式渲染）和**安全性**（防幻觉拦截）上达到了较高的完成度。评估数据表明，该系统相比纯大模型在专业准确度上有显著提升，具备实际辅助教学的应用价值。
