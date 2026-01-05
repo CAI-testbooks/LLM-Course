@@ -2,6 +2,7 @@
 import json
 import rospy
 from std_msgs.msg import String
+import re
 
 def build_default_delivery_plan():
     # 你要求的慢动作：等5s -> 起飞1m -> 前飞5m/5s -> 降0.5m悬停3s投包
@@ -33,11 +34,26 @@ class AgentStub:
         text = msg.data.strip()
         rospy.loginfo(f"[agent] command: {text}")
 
-        # 规则：出现投包/扔包/投送/空投等关键词就走投送任务
-        if any(k in text for k in ["投包", "扔包", "投送", "空投", "drop"]):
-            plan = build_default_delivery_plan()
-        else:
-            plan = build_default_delivery_plan()
+        m = re.search(r"起飞到\s*([0-9.]+)\s*(m|米)", text)
+        z = float(m.group(1)) if m else 1.0
+
+        m = re.search(r"向前飞\s*([0-9.]+)\s*(m|米)\s*用时\s*([0-9.]+)\s*秒", text)
+        d = float(m.group(1)) if m else 5.0
+        t = float(m.group(3)) if m else 5.0
+
+        do_drop = any(k in text for k in ["投包", "扔包", "投送", "空投", "drop"])
+        do_land = ("降落" in text) or ("落地" in text)
+
+        plan = {
+          "task": "uav_manual",
+          "steps": [
+            {"tool":"reset","args":{}},
+            {"tool":"takeoff","args":{"x":0.0,"y":0.0,"z":z,"timeout":10.0}},
+            {"tool":"goto","args":{"x":d,"y":0.0,"z":z,"timeout":max(1.0,t)}},
+          ] + ([{"tool":"drop_payload","args":{}}] if do_drop else []) + (
+            [{"tool":"land","args":{"x":d,"y":0.0,"z":0.2,"timeout":8.0}}] if do_land else []
+          )
+        }
 
         self.pub_plan.publish(String(data=json.dumps(plan, ensure_ascii=False)))
         rospy.loginfo("[agent] plan published to /agent/plan")

@@ -100,3 +100,7 @@ tail -n 30 ~/ros-embodied-uav-agent/ros_ws/src/uav_gazebo_demo/results/traces/*.
 重播时无人机的“真实位姿”没有被立刻复位到原点（/gazebo/reset_world 对“运行时 spawn 出来的模型”有时不会回到最初 spawn 位姿。
 
 解决办法：在 /demo/replay 里除了 reset_world，再显式调用 /gazebo/set_model_state 把无人机（和 payload）强制放回初始位姿。
+
+##2026-01-04
+-更新llm_agent_node.py程序
+根据发的文字内容来改变飞行任务
