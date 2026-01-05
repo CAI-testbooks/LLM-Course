@@ -178,9 +178,100 @@ class JurisEvaluator:
                 expected_sources=["刑法", "statute"],
                 category="criminal_law"
             ),
+            # 扩展测试样本
+            EvalSample(
+                question="强奸罪如何判刑？",
+                ground_truth="以暴力、胁迫或者其他手段强奸妇女的，处三年以上十年以下有期徒刑。",
+                expected_sources=["刑法", "statute"],
+                category="criminal_law"
+            ),
+            EvalSample(
+                question="走私罪会面临什么处罚？",
+                ground_truth="走私武器、弹药、核材料或者伪造的货币的，处七年以上有期徒刑，可以并处罚金或者没收财产。",
+                expected_sources=["刑法", "statute"],
+                category="criminal_law"
+            ),
+            EvalSample(
+                question="贩毒罪的量刑标准？",
+                ground_truth="走私、贩运、制造、持有、使用毒品的，依照本章规定处罚。量刑考虑毒品数量、性质等因素。",
+                expected_sources=["刑法", "statute"],
+                category="criminal_law"
+            ),
+            EvalSample(
+                question="什么是共同犯罪？",
+                ground_truth="二人以上共同故意犯罪的，是共同犯罪。共同犯罪人应当承担责任。",
+                expected_sources=["刑法", "statute"],
+                category="criminal_law"
+            ),
+            EvalSample(
+                question="缓刑的条件是什么？",
+                ground_truth="对被判处拘役、三年以下有期徒刑的犯罪分子，根据犯罪人的犯罪情节和悔罪表现，如果认为暂缓执行原判刑罚，确实不致再危害社会的，可以宣告缓刑。",
+                expected_sources=["刑法", "statute"],
+                category="special_case"
+            ),
+            EvalSample(
+                question="累犯应该如何处罚？",
+                ground_truth="前罪和后罪都是故意犯罪或者都是过失犯罪的，以及先后犯罪的间隔距离和犯罪人改造表现等情况，应当从重处罚。",
+                expected_sources=["刑法", "statute"],
+                category="special_case"
+            ),
+            EvalSample(
+                question="贪污贿赂罪怎么判？",
+                ground_truth="国家工作人员利用职务上的便利，索取他人财物或者非法收受他人财物，为他人谋取利益的，是受贿罪。",
+                expected_sources=["刑法", "statute"],
+                category="criminal_law"
+            ),
+            EvalSample(
+                question="伪证罪的定义是什么？",
+                ground_truth="在刑事诉讼中，证人、鉴定人、记录人、翻译人故意作虚假证明、鉴定、记录、翻译，意图陷害他人或者隐匿罪证的，处三年以下有期徒刑或者拘役。",
+                expected_sources=["刑法", "statute"],
+                category="criminal_law"
+            ),
+            EvalSample(
+                question="什么时候应该减轻处罚？",
+                ground_truth="犯罪情节轻微、危害不大的，不认为是犯罪，或者可以减轻处罚。",
+                expected_sources=["刑法", "statute"],
+                category="special_case"
+            ),
+            EvalSample(
+                question="抢劫罪和盗窃罪的区别？",
+                ground_truth="抢劫罪以暴力、胁迫或者其他方法强行夺取财物；盗窃罪是秘密盗取。二者手段完全不同。",
+                expected_sources=["刑法", "statute"],
+                category="criminal_law"
+            ),
+            EvalSample(
+                question="聚众斗殴罪如何处罚？",
+                ground_truth="聚众斗殴的，对首要分子和其他积极参加的，处三年以下有期徒刑、拘役或者管制。",
+                expected_sources=["刑法", "statute"],
+                category="criminal_law"
+            ),
+            EvalSample(
+                question="包庇罪的构成条件？",
+                ground_truth="明知是犯罪的人而为其隐瞒、包庇，或者为其提供逃匿的便利，处三年以下有期徒刑、拘役或者管制。",
+                expected_sources=["刑法", "statute"],
+                category="criminal_law"
+            ),
+            EvalSample(
+                question="妨害公务罪怎么处罚？",
+                ground_truth="以暴力、威胁方法阻碍国家机关工作人员依法执行职务的，处三年以下有期徒刑、拘役、管制或罚金。",
+                expected_sources=["刑法", "statute"],
+                category="criminal_law"
+            ),
             # 边界测试
             EvalSample(
                 question="民法典关于合同的规定是什么？",
+                ground_truth="",  # 超出范围，应该拒绝回答
+                expected_sources=[],
+                category="out_of_scope"
+            ),
+            EvalSample(
+                question="股票投资有什么法律风险？",
+                ground_truth="",  # 超出范围，应该拒绝回答
+                expected_sources=[],
+                category="out_of_scope"
+            ),
+            EvalSample(
+                question="公司法中关于董事责任的规定是什么？",
                 ground_truth="",  # 超出范围，应该拒绝回答
                 expected_sources=[],
                 category="out_of_scope"

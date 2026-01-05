@@ -73,7 +73,7 @@ UNCERTAIN_RESPONSE = """抱歉，根据现有法律数据库，我无法准确�
 
 # ==================== 数据处理配置 ====================
 # CAIL数据集加载限制（可通过环境变量覆盖）
-CAIL_CASE_LIMIT = int(os.getenv("CAIL_CASE_LIMIT", "20000"))
+CAIL_CASE_LIMIT = int(os.getenv("CAIL_CASE_LIMIT", "100000"))
 
 # 法条分割模式
 STATUTE_SEPARATORS = ["\n第", "\n\n", "\n", "。", "；"]

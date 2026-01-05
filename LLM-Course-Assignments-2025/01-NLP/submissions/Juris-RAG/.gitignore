@@ -24,6 +24,10 @@ ENV/
 # 向量数据库（文件可能很大）
 data/vector_db/
 
+# 大数据文件（不应上传到Git）
+data/raw/cail_cases*.json
+data/raw/*.json
+
 # 日志文件
 *.log
 
