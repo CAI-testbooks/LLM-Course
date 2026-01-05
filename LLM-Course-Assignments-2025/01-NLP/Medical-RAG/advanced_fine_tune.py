@@ -4,7 +4,8 @@ os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import numpy as np
 import torch
-from datasets import load_dataset
+import json
+from datasets import Dataset, load_dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -33,18 +34,88 @@ print(f"  Train: {TRAIN_FILE}")
 print(f"  Val:   {VAL_FILE} ({'存在' if has_validation else '不存在'})")
 
 # ========================
-# 加载数据集（JSONL格式）
+# 修正的数据集加载函数（处理JSONL格式）
 # ========================
-def load_jsonl_dataset(file_path):
-    """加载JSONL格式的数据集"""
-    return load_dataset("json", data_files=file_path, split="train")
+def load_jsonl_like(file_path):
+    """正确加载JSONL格式的数据集"""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # 尝试直接解析JSON数组
+    try:
+        data = json.loads(content)
+        if isinstance(data, list):
+            return data
+    except json.JSONDecodeError:
+        pass
+    
+    # 如果是真正的JSONL格式（每行一个JSON对象）
+    try:
+        records = []
+        with open(file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    records.append(json.loads(line))
+        return records
+    except json.JSONDecodeError:
+        pass
+    
+    # 如果是格式错误的JSON数组（缺少逗号或引号错误）
+    # 按 }{ 分割进行修复
+    records = []
+    for obj_str in content.strip().split('}{'):
+        if not obj_str.startswith('{'):
+            obj_str = '{' + obj_str
+        if not obj_str.endswith('}'):
+            obj_str = obj_str + '}'
+        try:
+            records.append(json.loads(obj_str))
+        except json.JSONDecodeError:
+            continue  # 跳过损坏行
+    return records
 
-train_dataset = load_jsonl_dataset(TRAIN_FILE)
-val_dataset = load_jsonl_dataset(VAL_FILE) if has_validation else None
+def create_flat_dataset(file_path):
+    """创建扁平化的数据集"""
+    raw_records = load_jsonl_like(file_path)
+    
+    # 展平为 {"question": "...", "answer": "..."} 列表
+    flat_data = []
+    for idx, rec in enumerate(raw_records):
+        if isinstance(rec, dict):
+            questions_list = rec.get("questions", [])
+            answers_list = rec.get("answers", [])
+            
+            # 处理多个问题对应一个答案的情况
+            if answers_list:
+                answer = str(answers_list[0]) if answers_list else ""
+                for q_list in questions_list:
+                    if isinstance(q_list, list):
+                        for q in q_list:  # 支持多问一答
+                            flat_data.append({
+                                "question": str(q).strip(), 
+                                "answer": answer.strip()
+                            })
+                    elif isinstance(q_list, str):
+                        # 如果问题字段直接是字符串
+                        flat_data.append({
+                            "question": q_list.strip(), 
+                            "answer": answer.strip()
+                        })
+    
+    return Dataset.from_list(flat_data)
+
+# 加载数据集
+train_dataset = create_flat_dataset(TRAIN_FILE)
+val_dataset = create_flat_dataset(VAL_FILE) if has_validation else None
 
 print("\n🔍 训练集示例:")
-print(train_dataset[0])
-if val_dataset:
+if len(train_dataset) > 0:
+    print(train_dataset[0])
+else:
+    print("训练集为空，请检查数据格式")
+
+if val_dataset and len(val_dataset) > 0:
     print("\n🔍 验证集示例:")
     print(val_dataset[0])
 
@@ -84,47 +155,100 @@ def format_qwen_prompt(question: str, answer: str) -> str:
 {answer}<|im_end|>"""
 
 def preprocess_function(examples):
-    """处理JSONL格式数据的预处理函数"""
-    batch_prompts = []
+    """处理扁平化数据的预处理函数，掩码非assistant部分"""
+    batch_input_ids = []
+    batch_attention_mask = []
+    batch_labels = []
+    
+    # 获取样本数量
+    num_samples = len(examples["question"]) if "question" in examples else 0
     
     # 遍历每个样本
-    for i in range(len(examples.get("questions", []))):
-        # 获取问题列表
-        questions_list = examples["questions"][i] if i < len(examples["questions"]) else []
-        # 获取答案
-        answer = examples["answers"][i] if i < len(examples["answers"]) else ""
-        
-        # 处理问题列表
-        if isinstance(questions_list, list) and len(questions_list) > 0:
-            # 使用第一个问题作为主要问题
-            question = str(questions_list[0]).strip()
-        else:
-            question = ""
-        
-        # 处理答案
-        answer = str(answer).strip()
+    for i in range(num_samples):
+        question = str(examples["question"][i]).strip()
+        answer = str(examples["answer"][i]).strip()
         
         # 跳过空数据
         if not question or not answer:
             continue
             
-        # 构建prompt
-        prompt = format_qwen_prompt(question, answer)
-        batch_prompts.append(prompt)
+        # 构建完整的prompt
+        full_prompt = format_qwen_prompt(question, answer)
+        
+        # 构建仅包含system和user部分的prompt（用于确定掩码位置）
+        user_prompt = f"""<|im_start|>system
+你是一个专业的医疗问答助手。<|im_end|>
+<|im_start|>user
+{question}<|im_end|>
+<|im_start|>assistant
+"""
+        
+        # 分词处理
+        full_tokens = tokenizer(
+            full_prompt,
+            truncation=True,
+            max_length=1024,
+            padding=False,
+            return_tensors="pt",
+        )
+        
+        user_tokens = tokenizer(
+            user_prompt,
+            truncation=True,
+            max_length=1024,
+            padding=False,
+            return_tensors="pt",
+        )
+        
+        # 获取input_ids
+        input_ids = full_tokens["input_ids"][0]
+        
+        # 创建labels，初始化为-100（忽略loss计算）
+        labels = torch.full_like(input_ids, -100)
+        
+        # 找到assistant部分开始的位置
+        user_len = len(user_tokens["input_ids"][0])
+        
+        # 确保assistant部分在序列范围内
+        if user_len < len(input_ids):
+            # 从assistant部分开始的位置设置labels为实际token
+            labels[user_len:] = input_ids[user_len:]
+        
+        # 创建attention_mask
+        attention_mask = torch.ones_like(input_ids)
+        
+        batch_input_ids.append(input_ids)
+        batch_attention_mask.append(attention_mask)
+        batch_labels.append(labels)
 
     # 如果没有有效数据，返回空字典
-    if len(batch_prompts) == 0:
-        return {"input_ids": [], "attention_mask": []}
+    if len(batch_input_ids) == 0:
+        return {"input_ids": [], "attention_mask": [], "labels": []}
 
-    # 分词处理
-    tokenized = tokenizer(
-        batch_prompts,
-        truncation=True,
-        max_length=1024,
-        padding="max_length",
-        return_tensors="pt",
-    )
-    return tokenized
+    # 填充到相同长度
+    max_length = max(len(ids) for ids in batch_input_ids)
+    
+    padded_input_ids = []
+    padded_attention_mask = []
+    padded_labels = []
+    
+    for input_ids, attention_mask, labels in zip(batch_input_ids, batch_attention_mask, batch_labels):
+        # 填充input_ids
+        if len(input_ids) < max_length:
+            pad_len = max_length - len(input_ids)
+            padded_input_ids.append(torch.cat([input_ids, torch.full((pad_len,), tokenizer.pad_token_id)]))
+            padded_attention_mask.append(torch.cat([attention_mask, torch.zeros((pad_len,))]))
+            padded_labels.append(torch.cat([labels, torch.full((pad_len,), -100)]))
+        else:
+            padded_input_ids.append(input_ids)
+            padded_attention_mask.append(attention_mask)
+            padded_labels.append(labels)
+    
+    return {
+        "input_ids": torch.stack(padded_input_ids),
+        "attention_mask": torch.stack(padded_attention_mask),
+        "labels": torch.stack(padded_labels)
+    }
 
 # ========================
 # 预处理数据集
