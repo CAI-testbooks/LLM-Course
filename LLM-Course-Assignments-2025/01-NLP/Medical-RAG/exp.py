@@ -17,8 +17,8 @@ import torch
 # ==========================================
 
 ST_TITLE = "中文医疗领域智能问答系统"
-#MODEL_NAME = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"  # 本地模型路径
-MODEL_NAME = "/root/autodl-tmp/Medical-RAG/Tune-model/medical-qwen-merged"  # 修改为merage后的模型路径
+MODEL_NAME = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"  # 本地模型路径
+#MODEL_NAME = "/root/autodl-tmp/Medical-RAG/Tune-model/medical-qwen-merged"  # 修改为merage后的模型路径
 EMBEDDING_MODEL = "BAAI/bge-m3"
 VECTOR_DB_PATH = "./chroma_db_medical"  # ← 向量库持久化目录 本地已存在 Chroma 向量数据库（如 ./chroma_db_medical），就直接加载；如果不存在，则从文档构建并向磁盘保存。
 # ==========================================
@@ -111,7 +111,7 @@ def initialize_rag_system():
         splits = splitter.split_documents(docs)
 
         st.info("正在构建向量库")
-        #首次加载巨慢无比 耐心等待 大约十分钟
+        #首次加载巨慢无比 耐心等待 大约几分钟
         #首次开启页面卡顿后，可以重新python -m streamlit run exp.py ，再打开页面巨快
         vectorstore = Chroma.from_documents(
             documents=splits,
@@ -124,21 +124,16 @@ def initialize_rag_system():
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
     # 加载本地 Qwen-2.5-7B 模型（带量化以节省显存）
-    # 加载 tokenizer 并修复 pad token
+    # 加载 tokenizer 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token  # ← 关键修复！
-
-    bnb_config = BitsAndBytesConfig(
-        #load_in_4bit=True,#必须注释，否则会出现梳理值naf 等问题
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16
-    )
+    # 加载 model
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
-        quantization_config=bnb_config,
+        torch_dtype=torch.bfloat16,    
         device_map="auto",
-        trust_remote_code=True
+        trust_remote_code=True,
+        #load_in_4bit=True,#显存不够可以打开
+
     )
 
     # 创建 pipeline 时显式指定 pad/eos token

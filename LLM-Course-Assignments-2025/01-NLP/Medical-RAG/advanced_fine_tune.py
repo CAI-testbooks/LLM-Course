@@ -33,13 +33,14 @@ print(f"  Train: {TRAIN_FILE}")
 print(f"  Val:   {VAL_FILE} ({'存在' if has_validation else '不存在'})")
 
 # ========================
-# 加载数据集
+# 加载数据集（JSONL格式）
 # ========================
-def load_json_dataset(file_path):
-    return load_dataset("json", data_files=file_path)["train"]
+def load_jsonl_dataset(file_path):
+    """加载JSONL格式的数据集"""
+    return load_dataset("json", data_files=file_path, split="train")
 
-train_dataset = load_json_dataset(TRAIN_FILE)
-val_dataset = load_json_dataset(VAL_FILE) if has_validation else None
+train_dataset = load_jsonl_dataset(TRAIN_FILE)
+val_dataset = load_jsonl_dataset(VAL_FILE) if has_validation else None
 
 print("\n🔍 训练集示例:")
 print(train_dataset[0])
@@ -47,68 +48,81 @@ if val_dataset:
     print("\n🔍 验证集示例:")
     print(val_dataset[0])
 
+# 检查数据结构
+print("\n📊 数据集结构信息:")
+print(f"训练集列名: {train_dataset.column_names}")
+print(f"训练集大小: {len(train_dataset)}")
+if val_dataset:
+    print(f"验证集大小: {len(val_dataset)}")
+
 # ========================
 # 模型与 Tokenizer
 # ========================
 MODEL_PATH = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"
 
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_use_double_quant=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.float16,
-)
-
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_PATH,
-    quantization_config=quantization_config,
+    load_in_4bit=True,
     device_map="auto",
     trust_remote_code=True,
     torch_dtype=torch.float16,
-    use_cache=False,
 )
 model.enable_input_require_grads()
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=True, use_fast=False)
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
+tokenizer.pad_token = tokenizer.eos_token
 
 # ========================
 # 构建 Qwen 对话模板
 # ========================
 def format_qwen_prompt(question: str, answer: str) -> str:
-    return f"system\n你是一个专业的医疗问答助手。\nuser\n{question}\assistant\n{answer}"
+    return f"""<|im_start|>system
+你是一个专业的医疗问答助手。<|im_end|>
+<|im_start|>user
+{question}<|im_end|>
+<|im_start|>assistant
+{answer}<|im_end|>"""
 
 def preprocess_function(examples):
-    questions = examples.get("questions", [])
-    answers = examples.get("answers", [])
-
+    """处理JSONL格式数据的预处理函数"""
     batch_prompts = []
-    for i in range(len(questions)):
-        # 安全提取 question
-        q = questions[i]
-        if isinstance(q, list):
-            q = q[0] if len(q) > 0 else ""
-        q = str(q).strip()
-
-        # 安全提取 answer
-        a = answers[i] if i < len(answers) else ""
-        if isinstance(a, list):
-            a = a[0] if len(a) > 0 else ""
-        a = str(a).strip()
-
-        if not q or not a:
-            batch_prompts.append("")
+    
+    # 遍历每个样本
+    for i in range(len(examples.get("questions", []))):
+        # 获取问题列表
+        questions_list = examples["questions"][i] if i < len(examples["questions"]) else []
+        # 获取答案
+        answer = examples["answers"][i] if i < len(examples["answers"]) else ""
+        
+        # 处理问题列表
+        if isinstance(questions_list, list) and len(questions_list) > 0:
+            # 使用第一个问题作为主要问题
+            question = str(questions_list[0]).strip()
         else:
-            batch_prompts.append(format_qwen_prompt(q, a))
+            question = ""
+        
+        # 处理答案
+        answer = str(answer).strip()
+        
+        # 跳过空数据
+        if not question or not answer:
+            continue
+            
+        # 构建prompt
+        prompt = format_qwen_prompt(question, answer)
+        batch_prompts.append(prompt)
 
-    # 修改：确保padding和truncation设置正确
+    # 如果没有有效数据，返回空字典
+    if len(batch_prompts) == 0:
+        return {"input_ids": [], "attention_mask": []}
+
+    # 分词处理
     tokenized = tokenizer(
         batch_prompts,
         truncation=True,
-        max_length=1028,
-        padding="max_length",  # 先用固定长度 padding，避免 collator 出错
-        return_tensors="pt",  # 直接返回 tensor
+        max_length=1024,
+        padding="max_length",
+        return_tensors="pt",
     )
     return tokenized
 
