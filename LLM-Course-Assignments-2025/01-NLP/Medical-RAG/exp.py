@@ -19,11 +19,11 @@ import torch
 ST_TITLE = "中文医疗领域智能问答系统"
 MODEL_NAME = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"  # 本地模型路径
 EMBEDDING_MODEL = "BAAI/bge-m3"
-VECTOR_DB_PATH = "./chroma_db_medical"  # ← 向量库持久化目录 本地已存在 Chroma 向量数据库（如 ./chroma_db_history），就直接加载；如果不存在，则从文档构建并向磁盘保存。
+VECTOR_DB_PATH = "./chroma_db_medical"  # ← 向量库持久化目录 本地已存在 Chroma 向量数据库（如 ./chroma_db_medical），就直接加载；如果不存在，则从文档构建并向磁盘保存。
 # ==========================================
 # 自定义 JSONL 加载函数
 # ==========================================
-def load_jsonl_as_documents(file_path):
+def load_jsonl_as_documents(file_path, use_answer_only=True):
     """从 JSONL 文件加载为 LangChain Documents"""
     docs = []
     with open(file_path, "r", encoding="utf-8") as f:
@@ -36,29 +36,30 @@ def load_jsonl_as_documents(file_path):
                 questions = data.get("questions", [])
                 answers = data.get("answers", [])
                 
-                # 支持多个问题对应一个答案（取第一个问题作为 content）
                 if not questions or not answers:
-                    st.warning(f"跳过无效行 {file_path}:{line_num}")
                     continue
                 
-                # 取第一个问题（可能是列表嵌套）
                 question = questions[0]
                 if isinstance(question, list):
                     question = question[0] if question else ""
-                
                 answer = answers[0] if answers else ""
-                
-                # 构造文本内容（可选：只用问题，或问题+答案）
-                text = f"问题：{question}\n答案：{answer}"
+
+                # ✅ 关键修改：只用 Answer 作为 page_content   Huatuo 百科 QA 中的 Answer 正是由专业医生撰写的解释性文本，完全满足这些条件
+                # RAG 检索：从 仅由 train Answer 构建的向量库 中召回相关医学知识片段.性价比极高
+                # 模型生成：微调后的 Qwen 接收「用户问题 + 检索到的知识」作为上下文，生成最终回答
+                if use_answer_only:
+                    text = answer.strip()
+                else:
+                    text = f"问题：{question}\n答案：{answer}"
+
                 metadata = {
-                    "question": question,
-                    "answer": answer,
-                    "source": os.path.basename(file_path),
+                    "source_question": question,  # 保留原始问题用于追踪
+                    "source_file": os.path.basename(file_path),
                     "line": line_num
                 }
                 docs.append(Document(page_content=text, metadata=metadata))
             except json.JSONDecodeError as e:
-                st.error(f"JSON 解析失败 {file_path}:{line_num} - {e}")
+                st.warning(f"跳过解析错误行 {file_path}:{line_num}")
                 continue
     return docs
 
@@ -86,16 +87,16 @@ def initialize_rag_system():
     else:
         # === 需要重新构建向量库 ===
         json_files = [
-            os.path.join(dataset_dir, "test_data.json"),
-            os.path.join(dataset_dir, "validation_data.json"),
-            os.path.join(dataset_dir, "train_data_8k.json")
+            #os.path.join(dataset_dir, "test_data.json"),
+            #os.path.join(dataset_dir, "validation_data.json"),
+            os.path.join(dataset_dir, "train_data_8k.json") # ← 仅训练集的answer作为向量库！构建即可，后续加入QA对进行微调即可
         ]
         
         docs = []
         for file_path in json_files:
             if os.path.exists(file_path):
                 st.info(f"正在加载: {os.path.basename(file_path)}")
-                file_docs = load_jsonl_as_documents(file_path)
+                file_docs = load_jsonl_as_documents(file_path, use_answer_only=True)# ← 只用 Answer
                 docs.extend(file_docs)
                 st.success(f"完成加载: {len(file_docs)} 条记录 from {os.path.basename(file_path)}")
             else:
@@ -108,7 +109,9 @@ def initialize_rag_system():
         splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
         splits = splitter.split_documents(docs)
 
-        st.info("正在构建向量库")#首次加载巨慢无比 耐心等待
+        st.info("正在构建向量库")
+        #首次加载巨慢无比 耐心等待 大约十分钟
+        #首次开启页面卡顿后，可以重新python -m streamlit run exp.py ，再打开页面巨快
         vectorstore = Chroma.from_documents(
             documents=splits,
             embedding=embeddings,

@@ -1,196 +1,286 @@
-# advanced_fine_tune.py - 针对AutoDL的优化版本（已调整数据处理部分）
+# advanced_fine_tune.py - 针对 AutoDL 的优化微调脚本（Qwen2.5-7B + LoRA + 4-bit）
 import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import numpy as np
 import torch
-from datasets import load_from_disk
+from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     TrainingArguments,
     Trainer,
-    DataCollatorForLanguageModeling
+    DataCollatorForLanguageModeling,
+    BitsAndBytesConfig
 )
 from peft import LoraConfig, get_peft_model, TaskType
-from torch.optim.lr_scheduler import CosineAnnealingLR
-import bitsandbytes as bnb  # 用于8-bit优化器
+import matplotlib.pyplot as plt
+# ========================
+# 路径配置
+# ========================
+DATASET_DIR = "/root/autodl-tmp/Medical-RAG/dataset"
+TRAIN_FILE = os.path.join(DATASET_DIR, "train_data_8k.json")
+VAL_FILE = os.path.join(DATASET_DIR, "validation_data.json")
+OUTPUT_BASE = "/root/autodl-tmp/Medical-RAG/Tune-model"
 
-# 设置环境变量
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# 检查训练文件是否存在
+if not os.path.exists(TRAIN_FILE):
+    raise FileNotFoundError(f"训练数据文件不存在: {TRAIN_FILE}")
 
+has_validation = os.path.exists(VAL_FILE)
+print("✅ 数据文件检查完成")
+print(f"  Train: {TRAIN_FILE}")
+print(f"  Val:   {VAL_FILE} ({'存在' if has_validation else '不存在'})")
+
+# ========================
 # 加载数据集
-dataset_path = "/root/autodl-tmp/Medical-RAG/dataset"
-dataset = load_from_disk(dataset_path)
+# ========================
+def load_json_dataset(file_path):
+    return load_dataset("json", data_files=file_path)["train"]
 
-# 使用4-bit量化加载模型以节省显存
-model = AutoModelForCausalLM.from_pretrained(
-    "qwen/Qwen2.5-7B-Instruct",
+train_dataset = load_json_dataset(TRAIN_FILE)
+val_dataset = load_json_dataset(VAL_FILE) if has_validation else None
+
+print("\n🔍 训练集示例:")
+print(train_dataset[0])
+if val_dataset:
+    print("\n🔍 验证集示例:")
+    print(val_dataset[0])
+
+# ========================
+# 模型与 Tokenizer
+# ========================
+MODEL_PATH = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"
+
+quantization_config = BitsAndBytesConfig(
     load_in_4bit=True,
-    torch_dtype=torch.float16,
-    device_map="auto",
-    quantization_config={
-        "load_in_4bit": True,
-        "bnb_4bit_use_double_quant": True,
-        "bnb_4bit_quant_type": "nf4",
-        "bnb_4bit_compute_dtype": torch.float16,
-    },
-    trust_remote_code=True
+    bnb_4bit_use_double_quant=True,
+    bnb_4bit_quant_type="nf4",
+    bnb_4bit_compute_dtype=torch.float16,
 )
 
-tokenizer = AutoTokenizer.from_pretrained("qwen/Qwen2.5-7B-Instruct", trust_remote_code=True)
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_PATH,
+    quantization_config=quantization_config,
+    device_map="auto",
+    trust_remote_code=True,
+    torch_dtype=torch.float16,
+    use_cache=False,
+)
+model.enable_input_require_grads()
 
+tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, trust_remote_code=True, use_fast=False)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-def format_medical_qa(example):
-    """格式化医疗问答数据 - 根据实际数据集格式调整"""
-    # 根据实际数据集格式处理
-    if 'questions' in example and 'answers' in example:
-        # 处理第一个问题和对应的答案
-        questions = example['questions']
-        answers = example['answers']
-        
-        # 从questions列表中取第一个问题
-        if isinstance(questions, list) and len(questions) > 0:
-            if isinstance(questions[0], list):
-                # 如果questions[0]也是一个列表，取第一个问题
-                question = questions[0][0] if len(questions[0]) > 0 else ""
-            else:
-                # 如果questions[0]是字符串
-                question = questions[0]
-        else:
-            question = ""
-        
-        # 从answers列表中取第一个答案
-        if isinstance(answers, list) and len(answers) > 0:
-            answer = answers[0]
-        else:
-            answer = ""
-    else:
-        # 如果列名不匹配，返回第一个和第二个值
-        values = list(example.values())
-        question, answer = values[0], values[1] if len(values) > 1 else ""
-    
-    prompt = f"<|system|>\n请回答以下医疗相关问题：\n<|user|>\n{question}\n<|assistant|>\n{answer}"
-    return prompt
+# ========================
+# 构建 Qwen 对话模板
+# ========================
+def format_qwen_prompt(question: str, answer: str) -> str:
+    return f"system\n你是一个专业的医疗问答助手。\nuser\n{question}\assistant\n{answer}"
 
-def preprocess_dataset(dataset):
-    def process_func(examples):
-        texts = [format_medical_qa(ex) for ex in examples]
-        tokenized = tokenizer(
-            texts,
-            truncation=True,
-            padding=False,
-            max_length=2048,
-            return_attention_mask=False  # 使用Flash Attention时可设为False
-        )
-        
-        labels = tokenized["input_ids"].copy()
-        tokenized["labels"] = labels
-        
-        return tokenized
-    
-    # 检查数据集结构，打印列名以便调试
-    print("数据集结构:")
-    for split_name in dataset.keys():
-        print(f"{split_name}: {dataset[split_name].column_names}")
-    
-    # 只处理训练集，如果验证集存在也处理
-    train_dataset = dataset["train"]
-    processed_train = train_dataset.map(
-        process_func,
-        batched=True,
-        remove_columns=train_dataset.column_names,
-        num_proc=4,  # 使用多进程加速
-        desc="Tokenizing train dataset"
+def preprocess_function(examples):
+    questions = examples.get("questions", [])
+    answers = examples.get("answers", [])
+
+    batch_prompts = []
+    for i in range(len(questions)):
+        # 安全提取 question
+        q = questions[i]
+        if isinstance(q, list):
+            q = q[0] if len(q) > 0 else ""
+        q = str(q).strip()
+
+        # 安全提取 answer
+        a = answers[i] if i < len(answers) else ""
+        if isinstance(a, list):
+            a = a[0] if len(a) > 0 else ""
+        a = str(a).strip()
+
+        if not q or not a:
+            batch_prompts.append("")
+        else:
+            batch_prompts.append(format_qwen_prompt(q, a))
+
+    # 修改：确保padding和truncation设置正确
+    tokenized = tokenizer(
+        batch_prompts,
+        truncation=True,
+        max_length=1028,
+        padding="max_length",  # 先用固定长度 padding，避免 collator 出错
+        return_tensors="pt",  # 直接返回 tensor
     )
-    
-    result_dataset = {"train": processed_train}
-    
-    if "validation" in dataset:
-        val_dataset = dataset["validation"]
-        processed_val = val_dataset.map(
-            process_func,
-            batched=True,
-            remove_columns=val_dataset.column_names,
-            num_proc=4,
-            desc="Tokenizing validation dataset"
-        )
-        result_dataset["validation"] = processed_val
-    
-    return result_dataset
+    return tokenized
 
+# ========================
 # 预处理数据集
-processed_dataset = preprocess_dataset(dataset)
+# ========================
+print("\n🔄 正在预处理数据...")
+train_tokenized = train_dataset.map(
+    preprocess_function,
+    batched=True,
+    num_proc=4,
+    remove_columns=train_dataset.column_names,
+    desc="Tokenizing train set"
+).filter(lambda x: len(x["input_ids"]) > 0)
 
-# LoRA配置 - 针对Qwen模型优化
+if val_dataset:
+    val_tokenized = val_dataset.map(
+        preprocess_function,
+        batched=True,
+        num_proc=4,
+        remove_columns=val_dataset.column_names,
+        desc="Tokenizing validation set"
+    ).filter(lambda x: len(x["input_ids"]) > 0)
+else:
+    val_tokenized = None
+
+print(f"✅ 预处理完成：训练集 {len(train_tokenized)} 条，验证集 {len(val_tokenized) if val_tokenized else 0} 条")
+
+# ========================
+# LoRA 配置
+# ========================
 peft_config = LoraConfig(
     task_type=TaskType.CAUSAL_LM,
     inference_mode=False,
-    r=16,  # 增加rank以提高性能
+    r=16,
     lora_alpha=64,
     lora_dropout=0.1,
     target_modules=[
-        "q_proj", "v_proj", "k_proj", "o_proj",
+        "q_proj", "k_proj", "v_proj", "o_proj",
         "gate_proj", "up_proj", "down_proj"
-    ]
+    ],
+    init_lora_weights=False,
 )
 
-# 应用LoRA
 model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
 
-# 训练参数配置 - 针对AutoDL优化
+# ========================
+# 训练参数
+# ========================
 training_args = TrainingArguments(
-    output_dir="./medical-qwen-finetuned",
+    output_dir=os.path.join(OUTPUT_BASE, "medical-qwen-lora"),
     overwrite_output_dir=True,
     num_train_epochs=3,
-    per_device_train_batch_size=1,  # 根据显存调整
-    gradient_accumulation_steps=8,  # 调整以平衡速度和显存
-    warmup_steps=500,
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=8,
+    warmup_steps=100,
     logging_steps=10,
-    save_steps=500,
-    evaluation_strategy="steps" if "validation" in processed_dataset else "no",
-    eval_steps=500,
-    learning_rate=2e-4,  # 稍微提高学习率
+    save_steps=100,
+    evaluation_strategy="steps" if val_tokenized else "no",
+    eval_steps=100,#每 500 步评估一次（可选）
+    learning_rate=2e-4,
     fp16=True,
-    logging_dir="./logs",
+    logging_dir=os.path.join(OUTPUT_BASE, "logs"),
     save_total_limit=2,
-    load_best_model_at_end=True if "validation" in processed_dataset else False,
-    metric_for_best_model="eval_loss" if "validation" in processed_dataset else None,
+    load_best_model_at_end=True if val_tokenized else False,
+    metric_for_best_model="eval_loss" if val_tokenized else None,
     greater_is_better=False,
     dataloader_pin_memory=False,
-    remove_unused_columns=False,  # 因为使用了自定义数据处理
-    gradient_checkpointing=True,  # 激活梯度检查点以节省显存
-    report_to=None,  # 禁用wandb等日志服务
+    remove_unused_columns=False,
+    gradient_checkpointing=True,
+    report_to=["tensorboard"],
+
 )
 
-# 数据整理器
+# ========================
+# Data Collator
+# ========================
+# 
 data_collator = DataCollatorForLanguageModeling(
     tokenizer=tokenizer,
-    mlm=False,
+    mlm=False
 )
 
-# 训练器
+# 测试 collator
+sample_batch = [train_tokenized[i] for i in range(min(2, len(train_tokenized)))]
+try:
+    batch = data_collator(sample_batch)
+    print("✅ Data collator 测试通过！")
+    print("Batch keys:", list(batch.keys()))
+    print("input_ids shape:", batch["input_ids"].shape)
+except Exception as e:
+    print("❌ Data collator 报错:", e)
+    raise
+# ========================
+# 可视化训练loss
+# ========================
+from transformers import TrainerCallback
+
+train_losses = []
+eval_losses = []
+steps = []
+# 回调函数
+class LossLoggingCallback(TrainerCallback):
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs is not None and "loss" in logs:
+            train_losses.append(logs["loss"])
+            steps.append(state.global_step)
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if metrics is not None and "eval_loss" in metrics:
+            eval_losses.append(metrics["eval_loss"])
+
+loss_callback = LossLoggingCallback()
+
+
+
+# ========================
+# 启动训练
+# ========================
 trainer = Trainer(
     model=model,
     args=training_args,
-    train_dataset=processed_dataset['train'],
-    eval_dataset=processed_dataset.get('validation'),
+    train_dataset=train_tokenized,
+    eval_dataset=val_tokenized,
     data_collator=data_collator,
+    callbacks=[loss_callback],  # ←←← 新增回调，进行loss可视化操作
 )
 
-# 开始训练
-print("开始微调训练...")
+print("\n🚀 开始LORA微调训练...")
 trainer.train()
 
-# 保存最终模型
-final_output_dir = "./medical-qwen-finetuned-final"
-model.save_pretrained(final_output_dir)
-tokenizer.save_pretrained(final_output_dir)
-print(f"模型已保存到 {final_output_dir}")
+# ========================
+# 保存模型
+# ========================
+final_lora_dir = os.path.join(OUTPUT_BASE, "medical-qwen-lora-final")
+model.save_pretrained(final_lora_dir)
+tokenizer.save_pretrained(final_lora_dir)
+print(f"\n✅ LoRA 适配器已保存至: {final_lora_dir}")
 
-# 合并LoRA权重到基础模型（可选）
-print("正在合并LoRA权重...")
-model_to_save = model.merge_and_unload()
-model_to_save.save_pretrained("./medical-qwen-merged")
-tokenizer.save_pretrained("./medical-qwen-merged")
-print("合并后的模型已保存")
+
+# ========================
+# 可视化训练loss展示
+# ========================
+if len(train_losses) > 0:
+    plt.figure(figsize=(12, 5))
+
+    # train—loss
+    plt.subplot(1, 2, 1)
+    plt.plot(steps, train_losses, label="Train Loss", marker='o', markersize=3)
+    plt.title("Training Loss")
+    plt.xlabel("Step")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.grid(True)
+
+    # eval-loss
+    if eval_losses:
+        # eval 每 eval_steps 一次，从 eval_steps 开始
+        eval_steps_list = [i * training_args.eval_steps for i in range(1, len(eval_losses) + 1)]
+        plt.subplot(1, 2, 2)
+        plt.plot(eval_steps_list, eval_losses, label="Eval Loss", color="red", marker='s', markersize=3)
+        plt.title("Evaluation Loss")
+        plt.xlabel("Step")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.grid(True)
+
+    plt.tight_layout()
+    loss_save_path = os.path.join(final_lora_dir, "loss_save.png")
+    plt.savefig(loss_save_path, dpi=150)
+    plt.close()  # 避免在 notebook 中显示
+    print(f"✅ Loss 曲线已保存至: {loss_save_path}")
+
+print("🎉LORA 微调完成！")

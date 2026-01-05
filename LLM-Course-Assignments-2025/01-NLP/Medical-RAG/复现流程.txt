@@ -1,4 +1,4 @@
-# 使用Python 3.10安装包，
+# 本地运行
 # 安装关键库 代码如下
 pip install langchain langchain-community langchain-openai chromadb python-dotenv streamlit
 # 本电脑实现时具体代码如下
@@ -28,3 +28,30 @@ C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe -m streamlit 
 
 运行数据集下载代码
  C:/Users/lenovo/AppData/Local/Programs/Python/Python310/python.exe "F:\01-NLP-医疗领域特定RAG问答系统\LLM-Course\LLM-Course-Assignments-2025\01-NLP\Medical-RAG\dataset_download\my_dataset.py"
+
+
+autodl 环境
+微调的 pip 包的问题
+pip install --upgrade datasets
+
+pip install "pyarrow==14.0.0"
+
+pip install "numpy<2"
+
+ pip install --upgrade \
+    transformers==4.39.3 \
+    peft==0.10.0 \
+    bitsandbytes==0.43.1 \
+    accelerate==0.29.3 \
+    datasets==2.18.0
+    
+同时，建议更新其他可能受影响的参数。如果遇到其他废弃参数的错误，可以参考以下修改：
+
+eval_strategy → evaluation_strategy
+如果遇到其他错误，可能还需要调整其他参数名称
+pip install --upgrade datasets
+
+ps aux | grep "advanced_fine_tune.py"
+kill -9 23838216
+nohup python Medical-RAG/advanced_fine_tune.py >/root/autodl-tmp/Medical-RAG/Tune-model/medical_finetune.log 2>&1 &
+tensorboard --logdir=/root/autodl-tmp/Medical-RAG/Tune-model/logs --host=127.0.0.1 --port=6006
