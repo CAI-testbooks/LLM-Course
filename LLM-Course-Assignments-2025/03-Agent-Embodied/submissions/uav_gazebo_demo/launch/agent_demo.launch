@@ -1,0 +1,34 @@
+<launch>
+  <env name="GAZEBO_MODEL_PATH" value="$(find uav_gazebo_demo)/models:$(optenv GAZEBO_MODEL_PATH)"/>
+
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(find uav_gazebo_demo)/worlds/demo.world"/>
+    <arg name="paused" value="false"/>
+    <arg name="use_sim_time" value="true"/>
+  </include>
+
+  <!-- spawn UAV & payload（UAV 用你现在能显示的那版） -->
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_uav" output="screen"
+        args="-sdf -file $(find uav_gazebo_demo)/models/iris_visual_only/model.sdf -model uav_dummy -x 0 -y 0 -z 0.2"/>
+
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_payload" output="screen"
+        args="-sdf -file $(find uav_gazebo_demo)/models/payload_box/model.sdf -model payload_box -x 0 -y 0 -z 0.0"/>
+
+  <!-- tools -->
+  <node pkg="uav_gazebo_demo" type="uav_control.py" name="uav_control" output="screen">
+    <param name="step" value="0.05"/>
+    <param name="tol" value="0.08"/>
+  </node>
+
+  <node pkg="uav_gazebo_demo" type="payload_drop.py" name="payload_drop" output="screen"/>
+
+  <!-- agent + plan executor -->
+  <node pkg="uav_gazebo_demo" type="llm_agent_node.py" name="llm_agent_node" output="screen"/>
+  <node pkg="uav_gazebo_demo" type="executor_plan.py" name="executor_plan" output="screen">
+    <param name="trace_dir" value="$(find uav_gazebo_demo)/results/traces"/>
+  </node>
+  <!-- One-click replay -->
+  <node pkg="uav_gazebo_demo" type="replay_service.py" name="replay_service" output="screen">
+    <param name="wait_sec" value="0.5"/>
+  </node>
+</launch>
