@@ -94,3 +94,9 @@ rostopic pub -1 /agent/command std_msgs/String \
 
 ls -lh ~/ros-embodied-uav-agent/ros_ws/src/uav_gazebo_demo/results/traces
 tail -n 30 ~/ros-embodied-uav-agent/ros_ws/src/uav_gazebo_demo/results/traces/*.jsonl
+
+##2026-01-04
+-更新replay_service.py程序，解决bug
+重播时无人机的“真实位姿”没有被立刻复位到原点（/gazebo/reset_world 对“运行时 spawn 出来的模型”有时不会回到最初 spawn 位姿。
+
+解决办法：在 /demo/replay 里除了 reset_world，再显式调用 /gazebo/set_model_state 把无人机（和 payload）强制放回初始位姿。
