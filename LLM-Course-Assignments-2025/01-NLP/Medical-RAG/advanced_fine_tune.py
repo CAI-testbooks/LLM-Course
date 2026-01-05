@@ -165,11 +165,11 @@ training_args = TrainingArguments(
     num_train_epochs=3,
     per_device_train_batch_size=1,
     gradient_accumulation_steps=8,
-    warmup_steps=100,
-    logging_steps=10,
-    save_steps=100,
+    warmup_steps=300,
+    logging_steps=50,
+    save_steps=300,
     evaluation_strategy="steps" if val_tokenized else "no",
-    eval_steps=100,#每 500 步评估一次（可选）
+    eval_steps=300,#每 300 步评估一次（可选）
     learning_rate=2e-4,
     fp16=True,
     logging_dir=os.path.join(OUTPUT_BASE, "logs"),
@@ -278,7 +278,7 @@ if len(train_losses) > 0:
         plt.grid(True)
 
     plt.tight_layout()
-    loss_save_path = os.path.join(final_lora_dir, "loss_save.png")
+    loss_save_path = os.path.join(OUTPUT_BASE, "logs", "loss_save.png")
     plt.savefig(loss_save_path, dpi=150)
     plt.close()  # 避免在 notebook 中显示
     print(f"✅ Loss 曲线已保存至: {loss_save_path}")

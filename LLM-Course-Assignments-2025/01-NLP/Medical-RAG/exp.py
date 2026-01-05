@@ -17,7 +17,8 @@ import torch
 # ==========================================
 
 ST_TITLE = "中文医疗领域智能问答系统"
-MODEL_NAME = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"  # 本地模型路径
+#MODEL_NAME = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"  # 本地模型路径
+MODEL_NAME = "/root/autodl-tmp/Medical-RAG/Tune-model/medical-qwen-merged"  # 修改为merage后的模型路径
 EMBEDDING_MODEL = "BAAI/bge-m3"
 VECTOR_DB_PATH = "./chroma_db_medical"  # ← 向量库持久化目录 本地已存在 Chroma 向量数据库（如 ./chroma_db_medical），就直接加载；如果不存在，则从文档构建并向磁盘保存。
 # ==========================================
@@ -158,7 +159,7 @@ def initialize_rag_system():
 
     #llm = HuggingFacePipeline(pipeline=pipe)
     
-    # 正确方式：先包装成 HuggingFacePipeline，再用 ChatHuggingFace
+    
     llm_pipeline = HuggingFacePipeline(pipeline=pipe)
 
     llm = ChatHuggingFace(
