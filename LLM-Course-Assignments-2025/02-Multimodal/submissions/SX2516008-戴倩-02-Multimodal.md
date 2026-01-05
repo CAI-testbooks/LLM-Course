@@ -22,11 +22,12 @@
 .
 ├── converted_images/          # 存放从数据集提取的图片
 ├── process_data.py            # 数据预处理脚本：读取 Parquet，保存图片，将数据转换为 Qwen2.5-VL 训练格式
+├── add_data.py                # 数据增强：使用Qwen3-8B模型，根据已有的交通情况问答对，生成更符合用户实际提问的交通决策问答对，提升模型性能和泛化性
 ├── train_lora_qwen25_vl.py    # LoRA 微调训练脚本
 ├── test_model.py              # 加载 LoRA 权重进行推理测试
 ├── qwen_test.py               # 基础模型（无 LoRA）推理测试
 ├── requirements.txt           # 项目依赖
-├── qwen_finetune.json         # json问答数据
+├── qwen_vl_7b.json            # json问答数据
 ├── ui.py                      # Gradio交互界面
 └── README.md                  # 项目说明文档
 ```
@@ -61,13 +62,24 @@ pip install -r requirements.txt
 
 2. **运行数据处理脚本**
 
-   该脚本会读取 Parquet 文件，将图片提取到 `converted_images/` 目录，并生成训练所需的 JSON 数据。
+   该脚本会读取 Parquet 文件，将图片提取到 `converted_images/` 目录，并生成训练所需的 JSON 数据，保存为 qwen_finetune.json 。
 
    ```bash
    python process_data.py
    ```
 
-   *注意：请在 `process_data.py` 中修改 `parquet_path` 为你实际的数据路径。*
+   注意：请在 `process_data.py` 中修改 `parquet_path` 为你实际的数据路径。
+
+## 数据增强
+
+使用 Qwen3-8B 模型，根据已有的交通情况问答对，生成更多样、更符合用户实际提问的交通决策问答对，提升模型性能和泛化性。
+输入为 qwen_finetune.json 文件，输出为 qwen_vl_7b文件。
+
+   ```bash
+   python add_data.py
+   ```
+
+由于初始数据集对交通图片提问维度单一，只有基础的场景描述，因此本实验基于 Qwen3-8B 模型以及数据集中已有的场景描述，为原始交通场景数据集批量生成专业的 QA 对话对。实验共定义了 7 个针对自动驾驶场景的问题模板，包括风险分析、决策建议、交通参与者识别、应急策略等维度，为每个场景随机抽取两个问题进行补充，保证增强后的 QA 对更符合自动驾驶的实际需求，使得模型能学习到更多的交通场景分析能力，而非仅基础的场景描述。
 
 ## 模型微调 (LoRA Training)
 
@@ -97,7 +109,7 @@ pip install -r requirements.txt
 ```bash
 python test_model.py
 ```
-*需在脚本中指定 `BASE_MODEL_PATH`, `LORA_PATH` 和 `TEST_IMAGE_PATH`。*
+需在脚本中指定 `BASE_MODEL_PATH`, `LORA_PATH` 和 `TEST_IMAGE_PATH`。
 
 ### 2. 测试基础模型
 
@@ -109,8 +121,10 @@ python qwen_test.py
 
 ## 交互界面
 
-### 用Gradio实现模型问答交互，用户上传当前从自车拍摄的图片，并提出交通决策相关问题，模型进行交通状况分析并回答驾驶决策
+用Gradio实现问答交互，用户上传当前从自车拍摄的图片，并提出交通决策相关问题，模型进行交通状况分析并回答驾驶决策
 
 ```bash
 python ui.py
 ```
+
+
