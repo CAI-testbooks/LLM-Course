@@ -6,7 +6,7 @@ import time
 # === 配置 ===
 # 使用国内镜像站下载，速度快且稳定
 DATA_URL = "https://hf-mirror.com/datasets/shibing624/medical/resolve/main/finetune/train_zh_0.json"
-SAVE_PATH = "data/medical.json"
+SAVE_PATH = "../data/medical.json"
 TARGET_COUNT = 8000  # 我们目标是取 8000 条，满足作业 5k+ 的要求
 
 
@@ -53,8 +53,8 @@ def download_and_process():
                 continue
 
         # 3. 保存为我们要的 JSON 格式
-        if not os.path.exists("data"):
-            os.makedirs("data")
+        if not os.path.exists("../data"):
+            os.makedirs("../data")
 
         print(f"💾 正在保存到 {SAVE_PATH}...")
         with open(SAVE_PATH, "w", encoding="utf-8") as f:

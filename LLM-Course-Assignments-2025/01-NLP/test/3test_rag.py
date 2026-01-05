@@ -8,13 +8,13 @@ from rag_system import RAGSystem
 # 或者在这里临时设置 (不推荐提交到 git)
 # os.environ["DEEPSEEK_API_KEY"] = "sk-..."
 
-DATA_PATH = "data/medical.json"
+DATA_PATH = "../data/medical.json"
 
 
 def ensure_test_data():
     """如果不包含数据文件，创建一个只有5条数据的测试文件"""
-    if not os.path.exists("data"):
-        os.makedirs("data")
+    if not os.path.exists("../data"):
+        os.makedirs("../data")
 
     if not os.path.exists(DATA_PATH):
         print(f"⚠️ 未检测到 {DATA_PATH}，正在创建临时测试数据...")
