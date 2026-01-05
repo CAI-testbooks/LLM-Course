@@ -35,10 +35,21 @@ class RAGInterface:
         self.rag_system = None
         self.uploaded_files = []
         self.chat_history = []
+        self.medical_data_loaded = False  # 标记医疗数据集是否已加载
 
         # 创建临时目录存储上传的文件
         self.temp_dir = tempfile.mkdtemp()
         logger.info(f"临时目录创建: {self.temp_dir}")
+
+        # 初始化RAG系统并自动加载医疗数据集
+        try:
+            logger.info("正在初始化RAG系统并加载Huatuo-26M医疗数据集...")
+            self.rag_system = RAGSystem(auto_load_medical_data=True)
+            self.medical_data_loaded = True
+            logger.info("✅ RAG系统初始化成功，医疗数据集已加载")
+        except Exception as e:
+            logger.error(f"RAG系统初始化失败: {str(e)}")
+            logger.warning("将在首次使用时重新尝试初始化")
 
     def upload_pdf(self, files) -> str:
         """
@@ -96,20 +107,28 @@ class RAGInterface:
 
             # 初始化RAG系统（如果还没有初始化）
             if self.rag_system is None:
-                self.rag_system = RAGSystem()
+                self.rag_system = RAGSystem(auto_load_medical_data=True)
 
             # 加载新文档
             new_documents = self.rag_system.load_pdf_documents(new_files)
 
-            # 如果已有知识库，需要合并文档
-            if hasattr(self, 'all_documents') and self.all_documents:
-                self.all_documents.extend(new_documents)
-                logger.info(f"向现有知识库添加 {len(new_documents)} 个新文档片段")
-            else:
-                self.all_documents = new_documents
-                logger.info(f"创建新知识库，包含 {len(new_documents)} 个文档片段")
+            # 获取现有文档（包括医疗数据集）
+            existing_docs = []
+            if self.rag_system.vectorstore:
+                # 从向量库中获取现有文档
+                if hasattr(self.rag_system.vectorstore, 'docstore') and hasattr(self.rag_system.vectorstore.docstore, '_dict'):
+                    existing_docs = list(self.rag_system.vectorstore.docstore._dict.values())
+                    logger.info(f"现有知识库包含 {len(existing_docs)} 个文档片段（包括医疗数据集）")
 
-            documents = self.all_documents
+            # 合并文档
+            if existing_docs:
+                all_documents = existing_docs + new_documents
+                logger.info(f"向现有知识库（含医疗数据）添加 {len(new_documents)} 个PDF文档片段")
+            else:
+                all_documents = new_documents
+                logger.info(f"创建新知识库，包含 {len(new_documents)} 个PDF文档片段")
+
+            documents = all_documents
 
             if not documents:
                 return "PDF文件加载失败，请检查文件格式"
@@ -153,26 +172,15 @@ class RAGInterface:
 
     def clear_knowledge_base(self) -> str:
         """
-        清空知识库
+        清空知识库（但会重新加载医疗数据集）
 
         Returns:
             str: 清空结果信息
         """
         try:
-            # 清空文件列表
+            # 清空上传的PDF文件列表
             if hasattr(self, 'uploaded_files'):
                 self.uploaded_files = []
-
-            # 清空文档列表
-            if hasattr(self, 'all_documents'):
-                self.all_documents = []
-
-            # 重置RAG系统
-            if self.rag_system:
-                self.rag_system.vectorstore = None
-                self.rag_system.qa_chain = None
-                self.rag_system.tfidf_embeddings = None
-                self.rag_system.documents = []
 
             # 清理临时文件
             if os.path.exists(self.temp_dir):
@@ -181,8 +189,13 @@ class RAGInterface:
                     if os.path.isfile(file_path):
                         os.remove(file_path)
 
-            logger.info("知识库已清空")
-            return "🗑️ 知识库已清空，可以重新上传文件构建新的知识库。"
+            # 重新初始化RAG系统（会自动加载医疗数据集）
+            logger.info("重新初始化RAG系统并加载医疗数据集...")
+            self.rag_system = RAGSystem(auto_load_medical_data=True)
+            self.medical_data_loaded = True
+
+            logger.info("知识库已重置，医疗数据集已重新加载")
+            return "🔄 知识库已重置\n🏥 Huatuo-26M医疗数据集已重新加载\n💡 已清除上传的PDF文件，保留医疗知识库"
 
         except Exception as e:
             logger.error(f"清空知识库失败: {str(e)}")
@@ -206,13 +219,14 @@ class RAGInterface:
         # 如果RAG系统未初始化，先初始化它
         if self.rag_system is None:
             try:
-                self.rag_system = RAGSystem()
+                self.rag_system = RAGSystem(auto_load_medical_data=True)
                 # 初始化问答链（即使没有文档也可以工作）
                 success = self.rag_system.init_qa_chain(temperature)
                 if not success:
                     error_response = "RAG系统初始化失败，请检查配置"
                     history.append([message, error_response])
                     return "", history, ""
+                self.medical_data_loaded = True
             except Exception as e:
                 error_response = f"RAG系统初始化失败: {str(e)}"
                 history.append([message, error_response])
@@ -350,17 +364,26 @@ class RAGInterface:
         status_info = []
         status_info.append("✅ RAG系统已初始化")
 
+        # 医疗数据集状态
+        if self.medical_data_loaded:
+            status_info.append("🏥 Huatuo-26M医疗数据集已加载")
+
         if self.rag_system.embeddings:
             status_info.append("✅ 嵌入模型已加载")
 
         if self.rag_system.vectorstore:
-            status_info.append("✅ 向量数据库已构建")
+            # 获取知识库文档数量
+            doc_count = 0
+            if hasattr(self.rag_system.vectorstore, 'docstore') and hasattr(self.rag_system.vectorstore.docstore, '_dict'):
+                doc_count = len(self.rag_system.vectorstore.docstore._dict)
+
+            status_info.append(f"✅ 向量数据库已构建（{doc_count} 个文档片段）")
 
         if self.rag_system.qa_chain:
             status_info.append("✅ 问答链已初始化")
 
         if self.uploaded_files:
-            status_info.append(f"📁 已加载 {len(self.uploaded_files)} 个PDF文件")
+            status_info.append(f"📁 已上传 {len(self.uploaded_files)} 个PDF文件（已合并到知识库）")
 
         if self.rag_system.memory:
             memory_info = self.rag_system.get_memory_summary()
@@ -543,22 +566,24 @@ class RAGInterface:
                             border-left: 4px solid #667eea;
                             margin-bottom: 20px;">
 
-                基于**检索增强生成(RAG)**技术的智能对话系统，支持两种对话模式：
+                基于**检索增强生成(RAG)**技术的智能对话系统，**已默认加载Huatuo-26M医疗数据集**
 
                 <table style="width: 100%; margin-top: 15px;">
                 <tr>
                     <td style="width: 50%; padding: 15px; background: rgba(255,255,255,0.5); border-radius: 10px; margin-right: 10px;">
-                        <h3 style="color: #667eea; margin-top: 0;">🤖 直接对话模式</h3>
+                        <h3 style="color: #667eea; margin-top: 0;">🏥 医疗知识库模式（默认）</h3>
                         <ul style="margin-bottom: 0;">
-                            <li>无需上传文档，直接与大模型对话</li>
-                            <li>基于模型训练知识回答问题</li>
+                            <li>已加载Huatuo-26M医疗数据集</li>
+                            <li>基于医疗知识库精准回答</li>
+                            <li>支持医疗专业问答</li>
                         </ul>
                     </td>
                     <td style="width: 50%; padding: 15px; background: rgba(255,255,255,0.5); border-radius: 10px;">
-                        <h3 style="color: #764ba2; margin-top: 0;">📚 知识库模式</h3>
+                        <h3 style="color: #764ba2; margin-top: 0;">📚 扩展知识库（可选）</h3>
                         <ul style="margin-bottom: 0;">
-                            <li>上传PDF文档构建个人知识库</li>
-                            <li>基于文档内容进行精准回答</li>
+                            <li>上传PDF文档扩充知识库</li>
+                            <li>自动合并到医疗知识库</li>
+                            <li>支持跨数据源综合检索</li>
                         </ul>
                     </td>
                 </tr>
@@ -566,10 +591,10 @@ class RAGInterface:
 
                 ### 📋 使用说明
 
-                1. 💬 **可直接开始对话** - 无需上传文档
-                2. 📁 **上传PDF文档**（可选，用于构建知识库）
+                1. 💬 **直接开始医疗问答** - 系统已加载医疗数据集
+                2. 📁 **上传PDF文档**（可选，追加到医疗知识库）
                 3. ⚙️ **调整生成参数**（可选）
-                4. 🔄 **可随时清空对话历史**
+                4. 🔄 **清空知识库** = 移除PDF但保留医疗数据集
 
                 </div>
                 """
@@ -622,7 +647,7 @@ class RAGInterface:
 
                     system_status = gr.Textbox(
                         label="当前状态",
-                        value="✅ 系统已就绪，可直接开始对话\n💡 提示：上传PDF文档可启用知识库模式",
+                        value="✅ 系统已就绪\n🏥 Huatuo-26M医疗数据集已加载\n💡 可直接开始医疗问答",
                         interactive=False,
                         lines=6
                     )

@@ -112,9 +112,12 @@ class RAGSystem:
     整合文档处理、向量存储、检索和生成功能
     """
 
-    def __init__(self):
+    def __init__(self, auto_load_medical_data: bool = True):
         """
         初始化RAG系统
+
+        Args:
+            auto_load_medical_data: 是否自动加载医疗数据集（默认True）
         """
         # 从环境变量获取配置
         self.api_key = os.getenv('DEEPSEEK_API_KEY')
@@ -132,12 +135,17 @@ class RAGSystem:
         self.vectorstore = None
         self.memory = None
         self.qa_chain = None
+        self.documents = []  # 存储所有文档
 
         # 初始化嵌入模型
         self._init_embeddings()
 
         # 初始化对话记忆
         self._init_memory()
+
+        # 自动加载医疗数据集
+        if auto_load_medical_data:
+            self._auto_load_huatuo_dataset()
 
         logger.info("RAG系统初始化完成")
 
@@ -181,6 +189,35 @@ class RAGSystem:
             output_key="answer"
         )
         logger.info("对话记忆初始化成功")
+
+    def _auto_load_huatuo_dataset(self):
+        """
+        自动加载Huatuo-26M医疗数据集
+        默认从data/medical.json加载
+        """
+        medical_data_path = os.path.join(os.path.dirname(__file__), "data", "medical.json")
+
+        if not os.path.exists(medical_data_path):
+            logger.warning(f"医疗数据集未找到: {medical_data_path}")
+            logger.info("如需使用医疗知识库，请将数据文件放置在 data/medical.json")
+            return
+
+        logger.info("🏥 正在加载Huatuo-26M医疗数据集...")
+
+        # 加载医疗数据
+        medical_docs = self.load_medical_data(medical_data_path)
+
+        if medical_docs:
+            # 构建向量数据库
+            success = self.build_vectorstore(medical_docs)
+
+            if success:
+                logger.info(f"✅ Huatuo-26M医疗数据集加载成功！包含 {len(medical_docs)} 条医疗知识")
+                logger.info("📚 知识库已就绪，可以开始医疗问答")
+            else:
+                logger.warning("医疗数据集向量化失败")
+        else:
+            logger.warning("医疗数据集加载为空")
 
     def load_medical_data(self, json_path: str) -> List[Document]:
         """
@@ -439,9 +476,9 @@ class RAGSystem:
                 # 调用LLM
                 answer = self.llm._call(prompt)
 
-                # 构建返回结果
+                # 构建返回结果 - 返回完整内容而不截断
                 source_info = [{
-                    "content": doc.page_content[:200] + "...",
+                    "content": doc.page_content,  # 返回完整内容
                     "metadata": doc.metadata
                 } for doc in relevant_docs]
 
@@ -474,9 +511,9 @@ class RAGSystem:
                 # 3. 生成
                 answer = self.llm._call(prompt)
 
-                # 4. 格式化来源
+                # 4. 格式化来源 - 返回完整内容
                 source_info = [{
-                    "content": doc.page_content[:200] + "...",
+                    "content": doc.page_content[:200] + "...",  # 返回完整内容
                     "metadata": doc.metadata
                 } for doc in relevant_docs]
 
