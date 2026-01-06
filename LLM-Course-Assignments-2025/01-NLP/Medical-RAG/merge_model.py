@@ -55,7 +55,7 @@ def merge_lora_weights():
     
     print("🔍 测试合并后模型的中文生成能力...")
     # 测试中文生成
-    test_prompt = "<|im_start|>system\n你是一个专业的医疗问答助手。<|im_end|>\n<|im_start|>user\n什么是高血压？<|im_end|>\n<|im_start|>assistant\n"
+    test_prompt = "<|im_start|>system\n你是一个专业的医疗问答助手。<|im_end|>\n<|im_start|>user\n羊癫疯症状<|im_end|>\n<|im_start|>assistant\n"
     
     inputs = tokenizer(test_prompt, return_tensors="pt", truncation=True, max_length=512)
     
@@ -147,3 +147,29 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# #merge  代码
+# from transformers import AutoModelForCausalLM, AutoTokenizer
+# from peft import PeftModel
+# import torch
+
+# base_model_path = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"
+# lora_path = "/root/autodl-tmp/Medical-RAG/Tune-model/medical-qwen-lora-final"
+# output_path = "/root/autodl-tmp/Medical-RAG/Tune-model/medical-qwen-merged"
+
+# tokenizer = AutoTokenizer.from_pretrained(base_model_path, trust_remote_code=True)
+# model = AutoModelForCausalLM.from_pretrained(
+#     base_model_path,
+#     torch_dtype=torch.bfloat16,
+#     device_map="auto",
+#     trust_remote_code=True,
+# )
+
+# model = PeftModel.from_pretrained(model, lora_path)
+# model = model.merge_and_unload()
+
+# model.save_pretrained(output_path)
+# tokenizer.save_pretrained(output_path)
+
+# print(f"✅ 合并完成！模型已保存至: {output_path}")

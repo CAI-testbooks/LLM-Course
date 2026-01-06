@@ -16,9 +16,9 @@ import torch
 # 配置区域
 # ==========================================
 
-ST_TITLE = "中文医疗领域智能问答系统"
-MODEL_NAME = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"  # 本地模型路径
-#MODEL_NAME = "/root/autodl-tmp/Medical-RAG/Tune-model/medical-qwen-merged"  # 修改为merage后的模型路径
+ST_TITLE = "通用中文医疗领域智能问答系统"
+#MODEL_NAME = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"  # 本地模型路径
+MODEL_NAME = "/root/autodl-tmp/Medical-RAG/Tune-model/medical-qwen-merged"  # 修改为merage后的模型路径
 EMBEDDING_MODEL = "BAAI/bge-m3"
 VECTOR_DB_PATH = "./chroma_db_medical"  # ← 向量库持久化目录 本地已存在 Chroma 向量数据库（如 ./chroma_db_medical），就直接加载；如果不存在，则从文档构建并向磁盘保存。
 # ==========================================
@@ -88,8 +88,6 @@ def initialize_rag_system():
     else:
         # === 需要重新构建向量库 ===
         json_files = [
-            #os.path.join(dataset_dir, "test_data.json"),
-            #os.path.join(dataset_dir, "validation_data.json"),
             os.path.join(dataset_dir, "train_data_8k.json") # ← 仅训练集的answer作为向量库！构建即可，后续加入QA对进行微调即可
         ]
         
@@ -163,6 +161,15 @@ def initialize_rag_system():
         streaming=True
     )
     # Prompt
+#     template = """<|im_start|>system
+# 你是一个专业的医疗AI助手。请结合以下【医学知识】回答用户问题。如果不知道，请直接说"根据现有医学资料，我无法提供确切答案，建议咨询专业医生"。
+
+# 【医学知识】：
+# {context}<|im_end|>
+# <|im_start|>user
+# {question}<|im_end|>
+# <|im_start|>assistant
+# """
     template = """
     你是一个专业的医疗AI助手。请结合以下【医学知识】回答用户问题。
     如果不知道，请直接说"根据现有医学资料，我无法提供确切答案，建议咨询专业医生"。
