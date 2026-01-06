@@ -123,6 +123,6 @@ def video_to_gif_hd(video_path, gif_path="uav_swarm_demo_hd.gif", fps=10):
 # 主函数（直接运行）
 if __name__ == "__main__":
     # 录制视频（150秒，覆盖完整巡检）
-    record_uav_swarm_video(duration=400)
+    record_uav_swarm_video(duration=450)
     # 转换为GIF（可选）
     video_to_gif_hd("uav_swarm_demo_hd.mp4")

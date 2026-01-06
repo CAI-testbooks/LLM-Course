@@ -2,7 +2,7 @@ import numpy as np
 import airsim
 
 
-def get_uav_state(client, uav_name, task_points, assigned_task):
+def get_uav_state(client, uav_name, task_points, assigned_task):  # 确保参数为4个：client, uav_name, task_points, assigned_task
     """
     获取单无人机状态：位置+速度+最近任务点距离+碰撞风险
     """
@@ -15,7 +15,7 @@ def get_uav_state(client, uav_name, task_points, assigned_task):
                     state.kinematics_estimated.linear_velocity.y_val,
                     state.kinematics_estimated.linear_velocity.z_val])
 
-    # 2. 最近任务点距离
+    # 2. 最近任务点距离（使用分配的任务点计算）
     if assigned_task is not None and assigned_task < len(task_points):
         nearest_task_dist = np.linalg.norm(pos - task_points[assigned_task])
     else:
@@ -36,7 +36,7 @@ def get_uav_state(client, uav_name, task_points, assigned_task):
         except:
             continue  # 忽略获取状态失败的无人机
 
-    # 整合状态
+    # 整合状态：位置(x,y,z)+速度(vx,vy,vz)+最近任务点距离+碰撞风险（共8维）
     uav_state = np.concatenate([pos, vel, [nearest_task_dist, collision_risk]])
     return uav_state
 
