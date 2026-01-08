@@ -1,4 +1,4 @@
-<img width="83" height="24" alt="image" src="https://github.com/user-attachments/assets/faa0ae30-0483-4ac7-93b4-51dfa3db8f10" /> # **AutoDev-Agent——基于大模型的自动化软件开发代理系统**  
+# **AutoDev-Agent——基于大模型的自动化软件开发代理系统**  
 
 ---
 
