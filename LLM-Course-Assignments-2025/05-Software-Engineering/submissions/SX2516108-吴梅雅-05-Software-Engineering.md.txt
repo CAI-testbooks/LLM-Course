@@ -149,10 +149,10 @@ def _evaluate_single_task(self, instance):
 MODEL_CONFIG = {
     "model_name": "./deepseek-coder-7b-instruct-v1.5",
     "device": "cuda" if torch.cuda.is_available() else "cpu",
-    "max_new_tokens": 2048,  # 适配SWE-bench长上下文需求
-    "temperature": 0.2,      # 低随机性保证代码生成稳定性
+    "max_new_tokens": 2048,
+    "temperature": 0.2,    
     "top_p": 0.95,
-    "repetition_penalty": 1.1  # 新增：降低代码重复生成概率
+    "repetition_penalty": 1.1 
 }
 ```
 
