@@ -8,10 +8,11 @@
 - **迭代3**: 新增对微调前后的Qwen模型进行评估，评估指标为Precision、F1和幻觉率。1.data_extract/generate_test_data.py: 使用Qwen-3-8B模型生成测试集数据保存在data_extract/chinese_history_test.json文件中 2. evaluation.py:对微调前面的模型进行评估。 3.eval/precision_F1_eval.py : 编写函数读取微调前后的模型，对测试集问题进行推理，并使用bret_score模块评估precision和F1。 eval/hallucination_eval.py：采用 LLM-as-a-Judge评估微调前和微调后的幻觉率，编写函数使用Qwen-3-8B模型，对微调前后模型生成的内容进行幻觉率判断。 实验结果表明微调后模型在测试集上的precision从原来的0.5946提升到了0.6721，F1分数从原来的0.6483提升到了0.7030。 但幻觉率没有显著提升。相关结果将由截图的形式展示在后面。
 - **迭代4**: 新增测试集数据，从原先的100条测试集数据新增到280条，并修改幻觉率检测的prompt,之前的prompt认为模型回答的完全正确才会认为没有幻觉，修改后认为基本上正确没有事实性错误则没有幻觉。最终结果微调后模型在测试集上的precision从原来的0.6088提升到了0.6855，F1分数从原来的0.6561提升到了0.7080。 但幻觉率微调前为0.175，微调后为0.232。 目前怀疑有可能在微调时训练的轮数过多，导致模型存在过拟合的现象，后续将调整微调策略，看是否可以有效降低幻觉率，并进一步提高历史专业领域的precision和F1。
 - **迭代5**: 本次迭代，使用了更强大的Qwen2.5-32B-Instruct模型，重新生成了QA对，并划分了训练集和测试集。生成的训练集QA对为14000条，测试集QA对150条。并在MAX_SEQ_LENGTH=1024，R=64，LORA_ALPHA=128的配置下重新微调了模型。完善了评估模块，对于precision,recall,f1等指标，舍弃了之前使用的bret_score方法，采用词级无序 F1 评估方法并加上LLM-judge方法进行修正。最终得到的结果为precision指标从0.526上升到了0.766， recall指标从0.669上升到了0.820， f1指标从0.566上升到了0.807，且幻觉率从微调前的0.2下降到0.107。
+- **迭代6**：第六次迭代，重新考虑了chunking策略,采用RecursiveCharacterTextSplitter(chunk_size=800 chars, overlap=100)的策略，其优点为：递归按层级分隔符（默认 \n\n → \n → 空格 → 字符）切割，尽量保持段落/句子完整，避免随意断句。实现简单、速度快、计算开销低。overlap=100（约12.5%）能有效防止上下文跨 chunk 丢失。适合叙述性历史文本（如纪传体、编年体）。并考虑使用了分层/父子 Chunking策略，先切大parent chunk（完整章节/事件，1000-2000 token），再切小 child chunk（200-500 token）用于检索。检索时先找 child，再返回对应 parent 提供完整上下文。 并将RAG系统中的Qwen-2.5-7B模型换成了微调后的模型。
 
 ## 团队分工
-- **任浩栋** ：
-- **唐佳懿** ：
+- **任浩栋** ：负责：1.爬虫数据采集、2.QA对生成、3.Lora微调、4.模型评估、5.rag系统实现等模块的代码编写。
+- **唐佳懿** ：负责：1.对数据进行审核和清洗， 2.Lora微调一次未达预期后对数据重新采集和生成QA对， 3. chunking策略探索与修改
 
 ## 运行环境
 
@@ -73,10 +74,6 @@ streamlit run RAG.py
   <img width="1222" height="504" alt="11" src="https://github.com/user-attachments/assets/d3bc4b58-ff10-4860-80e3-554431a6d5a4" />
   <img width="552" height="391" alt="13" src="https://github.com/user-attachments/assets/ceb9b62f-e5e3-46a7-bfe9-20c6480db1f4" />
 
-- **训练后RAG运行截图**：
-  <img width="1920" height="1050" alt="14" src="https://github.com/user-attachments/assets/39a801a6-db85-43e6-967d-f79adea4f746" />
-  <img width="1920" height="1050" alt="15" src="https://github.com/user-attachments/assets/e0b3e539-9bad-4065-b03f-385c352d9e4f" />
-
 ## 微调前后模型评估
 - **测试集数据** ：
   <img width="1503" height="542" alt="16" src="https://github.com/user-attachments/assets/9a9039b2-eeb5-43a0-9f2e-128ab15b326a" />
@@ -89,4 +86,7 @@ streamlit run RAG.py
 <img width="1200" height="490" alt="22" src="https://github.com/user-attachments/assets/32081f4a-846b-4282-91b1-6dfd48e1c5af" />
 <img width="2964" height="1763" alt="24" src="https://github.com/user-attachments/assets/57e6279e-db49-4ce1-aab5-f558414b68ea" />
 
+- **训练微调后RAG运行截图**：
+  <img width="1920" height="1050" alt="14" src="https://github.com/user-attachments/assets/39a801a6-db85-43e6-967d-f79adea4f746" />
+  <img width="1920" height="1050" alt="15" src="https://github.com/user-attachments/assets/e0b3e539-9bad-4065-b03f-385c352d9e4f" />
 
