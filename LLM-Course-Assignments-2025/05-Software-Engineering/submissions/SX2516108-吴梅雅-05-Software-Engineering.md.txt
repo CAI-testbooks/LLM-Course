@@ -127,30 +127,76 @@ def _evaluate_single_task(self, instance):
 
 ### 4.1 数据集配置
 
-- 采用 SWE-bench_Lite 的`test`分裂，包含 300 个测试实例
-- 缓存路径：`./data/cache`
-- 核心评估指标：修复成功率（成功修复的实例数 / 总实例数）
+本次实验同时采用三类主流代码基准数据集，分别针对代码生成、功能实现、真实 Bug 修复三类核心任务进行评估，具体配置如下：
+
+|   数据集名称   |         核心用途          |          数据规模          |     数据分裂     |     缓存路径     |              核心评估指标               |
+| :------------: | :-----------------------: | :------------------------: | :--------------: | :--------------: | :-------------------------------------: |
+|   HumanEval    |     代码生成能力评估      | 164 个 Python 函数生成任务 |      测试集      | ./data/humaneval |      通过率（Pass@k，k=1/10/100）       |
+|      MBPP      |  功能型代码实现能力评估   |  1000 个 Python 编程任务   | 测试集（500 个） |   ./data/mbpp    |      功能正确性（测试用例通过率）       |
+| SWE-bench_Lite | 真实场景 Bug 修复能力评估 |  300 个开源项目 Bug 案例   |      测试集      | ./data/swe_bench | 修复成功率（成功修复实例数 / 总实例数） |
+
+> 说明：
+>
+> - HumanEval 聚焦纯代码生成任务，评估模型从自然语言描述生成符合规范函数的能力；
+> - MBPP 侧重功能实现，每个任务包含详细需求、测试用例，评估代码的实际功能正确性；
+> - SWE-bench_Lite 基于真实开源项目 Bug，评估模型解决实际软件工程问题的能力。
 
 ### 4.2 模型参数
+
+模型参数保持统一配置，确保跨数据集评估的一致性，具体如下：
 
 ```python
 MODEL_CONFIG = {
     "model_name": "./deepseek-coder-7b-instruct-v1.5",
     "device": "cuda" if torch.cuda.is_available() else "cpu",
-    "max_new_tokens": 2048,
-    "temperature": 0.2,
-    "top_p": 0.95
+    "max_new_tokens": 2048,  # 适配SWE-bench长上下文需求
+    "temperature": 0.2,      # 低随机性保证代码生成稳定性
+    "top_p": 0.95,
+    "repetition_penalty": 1.1  # 新增：降低代码重复生成概率
 }
 ```
 
 ### 4.3 评估流程
 
-1. 加载 SWE-bench_Lite 测试集
-2. 对每个实例：
-   - 生成修复指令
-   - 调用 Agent 生成修复补丁
-   - 验证补丁对`FAIL_TO_PASS`和`PASS_TO_PASS`测试用例的影响
-3. 计算总体成功率并输出详细结果
+针对三类数据集的不同特点，设计统一框架下的差异化评估流程，整体流程如下：
+
+1. 数据集加载阶段：
+
+   - 分别加载 HumanEval、MBPP、SWE-bench_Lite 数据集并完成预处理（如格式标准化、测试用例提取）；
+   - 为每个数据集构建独立的任务指令模板（适配不同数据集的任务描述风格）。
+
+2. 分数据集评估阶段：
+
+   - HumanEval 评估：
+
+     ① 对每个函数生成任务，调用 Agent 生成 100 个候选代码样本；
+
+     ② 执行样本代码，验证是否通过所有隐式测试用例；
+
+     ③ 计算 Pass@1、Pass@10、Pass@100 指标。
+
+   - MBPP 评估：
+
+     ① 对每个编程任务，调用 Agent 生成完整可运行代码；
+
+     ② 执行数据集自带的显式测试用例；
+
+     ③ 统计通过全部测试用例的任务数量，计算功能正确率。
+
+   - SWE-bench_Lite 评估：
+
+     ① 对每个 Bug 案例，提取问题描述和测试用例集（FAIL_TO_PASS/PASS_TO_PASS）
+
+     ② 调用 Agent 生成修复补丁；
+
+     ③ 验证补丁是否使 FAIL_TO_PASS 测试全部通过，且 PASS_TO_PASS 测试无回归；
+
+     ④ 统计成功修复的实例数，计算修复成功率。
+
+3. 结果汇总阶段：
+
+   - 分别输出三类数据集的评估指标结果；
+   - 综合分析 Agent 在代码生成、功能实现、Bug 修复三类任务中的表现差异
 
 ## 5.实验结果
 
@@ -177,3 +223,15 @@ Runtime Error Cases  : 0
 ![image-20260107135408120](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260107135408120.png)
 
 ![image-20260107135416543](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260107135416543.png)
+
+#### SWE数据集
+
+Total Samples :300
+Matched Fixes :48
+Fix Rate :0.1600
+
+![image-20260108191206364](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260108191206364.png)
+
+![image-20260108191212743](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260108191212743.png)
+
+![image-20260108191218123](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260108191218123.png)
