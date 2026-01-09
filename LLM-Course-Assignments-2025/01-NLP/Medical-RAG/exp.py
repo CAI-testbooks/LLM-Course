@@ -1,0 +1,252 @@
+import streamlit as st
+import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"#从 Hugging Face 下载 BAAI/bge-m3 嵌入模型时 无法连接到互联网  需修改
+import json
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.vectorstores import Chroma
+from langchain_huggingface import HuggingFacePipeline, ChatHuggingFace
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline, BitsAndBytesConfig
+import torch
+# ==========================================
+# 配置区域
+# ==========================================
+
+ST_TITLE = "通用中文医疗领域智能问答系统"
+#MODEL_NAME = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"  # 本地模型路径
+MODEL_NAME = "/root/autodl-tmp/Medical-RAG/Tune-model/medical-qwen-merged"  # 修改为merage后的模型路径
+EMBEDDING_MODEL = "BAAI/bge-m3"
+VECTOR_DB_PATH = "./chroma_db_medical"  # ← 向量库持久化目录 本地已存在 Chroma 向量数据库（如 ./chroma_db_medical），就直接加载；如果不存在，则从文档构建并向磁盘保存。
+# ==========================================
+# 自定义 JSONL 加载函数
+# ==========================================
+def load_jsonl_as_documents(file_path, use_answer_only=True):
+    """从 JSONL 文件加载为 LangChain Documents"""
+    docs = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        for line_num, line in enumerate(f, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+                questions = data.get("questions", [])
+                answers = data.get("answers", [])
+                
+                if not questions or not answers:
+                    continue
+                
+                question = questions[0]
+                if isinstance(question, list):
+                    question = question[0] if question else ""
+                answer = answers[0] if answers else ""
+
+                # ✅ 关键修改：只用 Answer 作为 page_content   Huatuo 百科 QA 中的 Answer 正是由专业医生撰写的解释性文本，完全满足这些条件
+                # RAG 检索：从 仅由 train Answer 构建的向量库 中召回相关医学知识片段.性价比极高
+                # 模型生成：微调后的 Qwen 接收「用户问题 + 检索到的知识」作为上下文，生成最终回答
+                if use_answer_only:
+                    text = answer.strip()
+                else:
+                    text = f"问题：{question}\n答案：{answer}"
+
+                metadata = {
+                    "source_question": question,  # 保留原始问题用于追踪
+                    "source_file": os.path.basename(file_path),
+                    "line": line_num
+                }
+                docs.append(Document(page_content=text, metadata=metadata))
+            except json.JSONDecodeError as e:
+                st.warning(f"跳过解析错误行 {file_path}:{line_num}")
+                continue
+    return docs
+
+# ==========================================
+# 初始化 RAG 系统
+# ==========================================
+@st.cache_resource
+def initialize_rag_system():
+    dataset_dir = "/root/autodl-tmp/Medical-RAG/dataset"
+    if not os.path.exists(dataset_dir):
+        return None, f"找不到数据集目录: {dataset_dir}"
+
+    # 向量化配置（必须提前定义，用于加载或创建）
+    embeddings = HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL,
+        model_kwargs={"device": "cuda"},
+        encode_kwargs={"normalize_embeddings": True}
+    )
+
+    # 检查是否已有持久化的向量库
+    if os.path.exists(VECTOR_DB_PATH):
+        st.info("检测到已有向量库，正在加载...")
+        vectorstore = Chroma(persist_directory=VECTOR_DB_PATH, embedding_function=embeddings)
+        st.success("✅ 向量库加载完成！")
+    else:
+        # === 需要重新构建向量库 ===
+        json_files = [
+            os.path.join(dataset_dir, "train_data_8k.json") # ← 仅训练集的answer作为向量库！构建即可，后续加入QA对进行微调即可
+        ]
+        
+        docs = []
+        for file_path in json_files:
+            if os.path.exists(file_path):
+                st.info(f"正在加载: {os.path.basename(file_path)}")
+                file_docs = load_jsonl_as_documents(file_path, use_answer_only=True)# ← 只用 Answer
+                docs.extend(file_docs)
+                st.success(f"完成加载: {len(file_docs)} 条记录 from {os.path.basename(file_path)}")
+            else:
+                st.warning(f"文件不存在: {file_path}")
+
+        if not docs:
+            return None, "未加载到任何有效文档"
+
+        # 切分
+        splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
+        splits = splitter.split_documents(docs)
+
+        st.info("正在构建向量库")
+        #首次加载巨慢无比 耐心等待 大约几分钟
+        #首次开启页面卡顿后，可以重新python -m streamlit run exp.py ，再打开页面巨快
+        vectorstore = Chroma.from_documents(
+            documents=splits,
+            embedding=embeddings,
+            persist_directory=VECTOR_DB_PATH
+        )
+        st.success("✅ 向量库构建完成并已保存至本地！")
+
+    # 检索器
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+
+    # 加载本地 Qwen-2.5-7B 模型（带量化以节省显存）
+    # 加载 tokenizer 
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
+    # 加载 model
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        torch_dtype=torch.bfloat16,    
+        device_map="auto",
+        trust_remote_code=True,
+        #load_in_4bit=True,#显存不够可以打开
+
+    )
+
+    # 创建 pipeline 时显式指定 pad/eos token
+    pipe = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        max_new_tokens=1024,
+        temperature=0.1,
+        top_p=0.95,
+        repetition_penalty=1.1,
+        do_sample=True,
+        pad_token_id=tokenizer.pad_token_id,   # ← 必须
+        eos_token_id=tokenizer.eos_token_id,   # ← 推荐
+        clean_up_tokenization_spaces=True
+    )
+    #llm_pipeline = HuggingFacePipeline(pipeline=pipe)
+
+    #llm = HuggingFacePipeline(pipeline=pipe)
+    
+    
+    llm_pipeline = HuggingFacePipeline(pipeline=pipe)
+
+    llm = ChatHuggingFace(
+        llm=llm_pipeline,       # ← 必须用 llm= 参数
+        tokenizer=tokenizer,
+        streaming=True
+    )
+    # Prompt
+#     template = """<|im_start|>system
+# 你是一个专业的医疗AI助手。请结合以下【医学知识】回答用户问题。如果不知道，请直接说"根据现有医学资料，我无法提供确切答案，建议咨询专业医生"。
+
+# 【医学知识】：
+# {context}<|im_end|>
+# <|im_start|>user
+# {question}<|im_end|>
+# <|im_start|>assistant
+# """
+    template = """
+    你是一个专业的医疗AI助手。请结合以下【医学知识】回答用户问题。
+    如果不知道，请直接说"根据现有医学资料，我无法提供确切答案，建议咨询专业医生"。
+
+    【医学知识】：
+    {context}
+
+    【用户问题】：
+    {question}
+    """
+    prompt = ChatPromptTemplate.from_template(template)
+
+
+    # RAG 链
+    rag_chain = (
+        {"context": retriever, "question": RunnablePassthrough()}
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    return rag_chain, "系统初始化完成"
+
+
+# ==========================================
+# Streamlit UI
+# ==========================================
+st.set_page_config(page_title=ST_TITLE, page_icon="🏥")
+st.title(ST_TITLE)
+st.markdown("### 💊 基于医学知识库的智能问答系统")
+st.markdown("---")
+
+with st.sidebar:
+    st.header("系统状态面板")
+    with st.spinner("正在加载医学知识库..."):
+        rag_chain, msg = initialize_rag_system()
+
+    if rag_chain:
+        st.success("✅ 医学知识库已挂载 (RAG Ready)")
+        st.info(f"🧠 模型: {MODEL_NAME}")
+    else:
+        st.error(f"❌ 启动失败: {msg}")
+        st.stop()
+
+    st.markdown("---")
+    st.markdown("**免责声明**")
+    st.markdown("⚠️ 本系统仅提供医学知识参考，不能替代专业医疗建议。如有紧急情况，请立即就医。")
+    
+    if st.button("清除对话历史"):
+        st.session_state.messages = []
+        st.rerun()
+
+# 初始化对话历史
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# 显示历史
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# 用户输入
+if prompt := st.chat_input("请输入关于中文医疗领域的问题..."):
+    st.chat_message("user").markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    with st.chat_message("assistant"):
+        response_placeholder = st.empty()
+        full_response = ""
+        try:
+            for chunk in rag_chain.stream(prompt):
+                full_response += chunk
+                response_placeholder.markdown(full_response + "▌")
+            response_placeholder.markdown(full_response)
+        except Exception as e:
+            error_msg = f"抱歉，系统遇到错误: {str(e)}"
+            st.error(error_msg)
+            full_response = error_msg
+
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
