@@ -1,0 +1,24 @@
+# --- RAG 框架与组件 ---
+llama-index>=0.10.0
+llama-index-llms-huggingface
+llama-index-embeddings-huggingface
+llama-index-vector-stores-chroma
+
+# --- 向量数据库 ---
+chromadb>=0.4.0
+
+# --- 大模型与深度学习基础 ---
+torch>=2.1.0
+transformers>=4.37.0
+accelerate>=0.26.0
+bitsandbytes>=0.41.0
+einops
+sentencepiece
+
+# --- 数据处理 ---
+datasets
+pandas
+
+# --- Web 前端 ---
+streamlit>=1.30.0
+watchdog
