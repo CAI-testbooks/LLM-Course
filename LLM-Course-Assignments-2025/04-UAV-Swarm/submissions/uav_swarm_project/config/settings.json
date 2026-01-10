@@ -1,0 +1,12 @@
+{
+  "siliconflow_api_key": "sk-pgajauuypprsyzlcctewuurkpctqmnhjrlatbijkbhjjtere",
+  "siliconflow_base_url": "https://api.siliconflow.cn/v1",
+  "llm_model": "deepseek-ai/DeepSeek-V3",
+  "uav_list": ["UAV_0"],
+  "patrol_height": 5,
+  "static_obstacles": [],
+  "patrol_points": [[10,2,-5]],
+  "uav_speed": 1,
+  "obstacle_radius": 3,
+  "step_size": 0.5
+}

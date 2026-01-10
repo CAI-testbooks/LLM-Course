@@ -1,0 +1,52 @@
+{
+  "SettingsVersion": 1.2,
+  "SimMode": "Multirotor",
+  "RpcEnabled": true,
+  "ClockSpeed": 1.0,
+  "EngineSound": false,
+  "ViewMode": "FlyWithMe",
+  "Vehicles": {
+    "Drone1": {
+      "VehicleType": "SimpleFlight",
+      "X": 0, "Y": 0, "Z": 0,
+      "Sensors": {
+        "Lidar1": {
+          "SensorType": 6,
+          "Enabled": true,
+          "NumberOfChannels": 16,
+          "PointsPerSecond": 10000,
+          "Range": 20.0,
+          "DrawDebugPoints": true
+        }
+      }
+    },
+    "Drone2": {
+      "VehicleType": "SimpleFlight",
+      "X": 0, "Y": 3, "Z": 0,
+      "Sensors": {
+        "Lidar1": {
+          "SensorType": 6,
+          "Enabled": true,
+          "NumberOfChannels": 16,
+          "PointsPerSecond": 10000,
+          "Range": 20.0,
+          "DrawDebugPoints": true
+        }
+      }
+    },
+    "Drone3": {
+      "VehicleType": "SimpleFlight",
+      "X": 0, "Y": -3, "Z": 0,
+      "Sensors": {
+        "Lidar1": {
+          "SensorType": 6,
+          "Enabled": true,
+          "NumberOfChannels": 16,
+          "PointsPerSecond": 10000,
+          "Range": 20.0,
+          "DrawDebugPoints": true
+        }
+      }
+    }
+  }
+}

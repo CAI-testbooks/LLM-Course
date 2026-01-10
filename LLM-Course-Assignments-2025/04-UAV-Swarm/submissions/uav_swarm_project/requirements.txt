@@ -1,0 +1,7 @@
+# 基础依赖
+airsim>=1.8.1
+numpy>=1.26.0
+# LLM依赖（OpenAI API）
+openai>=1.13.3
+# 配置文件解析
+json5>=0.9.14

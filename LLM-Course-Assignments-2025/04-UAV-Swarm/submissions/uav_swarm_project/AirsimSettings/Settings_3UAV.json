@@ -1,0 +1,66 @@
+{
+  "SettingsVersion": 1.2,
+  "SimMode": "Multirotor",
+  "Vehicles": {
+    "Drone1": {
+      "VehicleType": "SimpleFlight",
+      "AutoCreate": true,
+      "X": 0, "Y": 0, "Z": -2,
+      "Sensors": {
+        "Lidar1": {
+          "SensorType": 6,
+          "Enabled": true,
+          "NumberOfChannels": 16,
+          "Range": 20,
+          "PointsPerSecond": 100000,
+          "VerticalFOVUpper": 35,
+          "VerticalFOVLower": -35,
+          "HorizontalFOVStart": -180,
+          "HorizontalFOVEnd": 180,
+          "X": 0, "Y": 0, "Z": 0,
+          "DrawDebugPoints": true
+        }
+      }
+    },
+    "Drone2": {
+      "VehicleType": "SimpleFlight",
+      "AutoCreate": true,
+      "X": 0, "Y": 3, "Z": -2,
+      "Sensors": {
+        "Lidar1": {
+          "SensorType": 6,
+          "Enabled": true,
+          "NumberOfChannels": 16,
+          "Range": 20,
+          "PointsPerSecond": 100000,
+          "VerticalFOVUpper": 35,
+          "VerticalFOVLower": -35,
+          "HorizontalFOVStart": -180,
+          "HorizontalFOVEnd": 180,
+          "X": 0, "Y": 0, "Z": 0,
+          "DrawDebugPoints": true
+        }
+      }
+    },
+    "Drone3": {
+      "VehicleType": "SimpleFlight",
+      "AutoCreate": true,
+      "X": 0, "Y": -3, "Z": -2,
+      "Sensors": {
+        "Lidar1": {
+          "SensorType": 6,
+          "Enabled": true,
+          "NumberOfChannels": 16,
+          "Range": 20,
+          "PointsPerSecond": 100000,
+          "VerticalFOVUpper": 35,
+          "VerticalFOVLower": -35,
+          "HorizontalFOVStart": -180,
+          "HorizontalFOVEnd": 180,
+          "X": 0, "Y": 0, "Z": 0,
+          "DrawDebugPoints": true
+        }
+      }
+    }
+  }
+}
