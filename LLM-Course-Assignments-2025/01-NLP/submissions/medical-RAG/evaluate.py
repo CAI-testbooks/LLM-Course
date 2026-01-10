@@ -12,17 +12,18 @@ from llama_index.core import VectorStoreIndex, Settings
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.huggingface import HuggingFaceLLM
+from llama_index.core import PromptTemplate
 import chromadb
 
 # ================= ⚙️ 配置区域 =================
 
 # 1. DeepSeek API 配置
-DEEPSEEK_API_KEY = "sk-79bbee98a7bf4215a5e27a993f1f0a23"
+DEEPSEEK_API_KEY = "sk-xxx"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 # 2. 待评估的本地模型路径
-# MODEL_PATH = "./Qwen/Qwen2.5-7B-Instruct"  # 第一次运行基线模型
-MODEL_PATH = "./Qwen/Qwen-Medical-Merged"       # 第二次运行微调后模型
+MODEL_PATH = "./Qwen/Qwen2.5-7B-Instruct"  # 第一次运行基线模型
+# MODEL_PATH = "./Qwen/Qwen-Medical-Merged"       # 第二次运行微调后模型
 
 # 3. 其他路径配置
 CHROMA_PATH = "./chroma_db"
@@ -49,17 +50,16 @@ def compute_rouge(pred, label):
         return 0.0
 
 def call_deepseek_judge(prompt, model="deepseek-chat"):
-    # 调用 DeepSeek API 进行判别
     client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url=DEEPSEEK_BASE_URL)
     try:
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": "你是一个公正、严谨的医疗问答评判专家。请只输出 YES 或 NO，不要包含其他废话。"},
+                {"role": "system", "content": "你是一个自动评估机器人。请严格遵循用户的指令进行判断。最终只输出 'YES' 或 'NO'，不要包含任何解释或标点符号。"},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.0,
-            max_tokens=10
+            max_tokens=5
         )
         return response.choices[0].message.content.strip().upper()
     except Exception as e:
@@ -79,30 +79,37 @@ def evaluate_single_sample(query_engine, question, reference):
     # 2. 计算 Rouge-L
     rouge_score = compute_rouge(pred_response, reference)
 
-    # 3. DeepSeek 评估准确率
-    # 判断生成的回答是否与标准答案意思一致
+    # 3. DeepSeek 评估准确率 (Accuracy)
+    # 目标：判断模型回答是否符合标准答案的医学事实
     acc_prompt = (
-        f"【任务】：判断模型回答是否在医学事实层面与标准答案一致。\n"
-        f"【问题】：{question}\n"
-        f"【标准答案】：{reference}\n"
-        f"【模型回答】：{pred_response}\n\n"
-        f"请判断：模型回答是否正确？如果是，输出 'YES'；如果错误或答非所问，输出 'NO'。"
+        f"【任务】：作为一名医学专家，请判断【模型回答】是否与【标准答案】在医学事实和建议上一致。\n\n"
+        f"【标准答案】：\n{reference}\n\n"
+        f"【模型回答】：\n{pred_response}\n\n"
+        f"【评判标准】：\n"
+        f"1. 忽略语气、格式或详细程度的差异。\n"
+        f"2. 关注核心医学事实（如病因、药物、治疗建议）是否一致。\n"
+        f"3. 如果模型回答包含标准答案中没有的额外正确信息，视为正确。\n"
+        f"4. 如果模型回答与标准答案的关键事实冲突，视为错误。\n\n"
+        f"请输出判断结果（只输出 'YES' 代表正确，'NO' 代表错误）："
     )
     acc_res = call_deepseek_judge(acc_prompt)
     is_accurate = 1 if "YES" in acc_res else 0
 
-    # 4. DeepSeek 评估幻觉
-    # 判断回答是否完全基于参考文档 (Faithfulness)
+    # 4. DeepSeek 评估幻觉 (Hallucination / Faithfulness)
+    # 目标：判断模型是否编造了参考文档中不存在的信息
     hal_prompt = (
-        f"【任务】：判断模型回答是否包含参考文档中未提及的信息（即幻觉）。\n"
-        f"【参考文档】：\n{context_text}\n\n"
-        f"【模型回答】：{pred_response}\n\n"
-        f"请判断：模型回答中的关键信息是否都能在参考文档中找到支持？\n"
-        f"如果包含文档里没说的额外信息（可能是幻觉），输出 'YES'；\n"
-        f"如果完全基于文档回答，输出 'NO'。"
+        f"【任务】：你是一个极其严格的事实核查员。请判断【模型回答】中的信息是否**完全支持**于提供的【参考文档】。\n\n"
+        f"【参考文档片段】：\n{context_text}\n\n"
+        f"【模型回答】：\n{pred_response}\n\n"
+        f"【评判标准】：\n"
+        f"1. 这是一场开卷考试，**禁止**利用你自己的医学知识。\n"
+        f"2. 如果模型回答了文档中没有提到的信息（即使该信息在现实世界中是正确的），也被视为幻觉（Hallucination）。\n"
+        f"3. 如果模型回答说“文档中未提及”或“不知道”，这不属于幻觉，属于诚实回答。\n\n"
+        f"请判断：模型回答是否包含参考文档不支持的信息？\n"
+        f"如果有不支持的信息（即存在幻觉），输出 'YES'；\n"
+        f"如果所有信息都能在文档找到依据（即没有幻觉），输出 'NO'。"
     )
     hal_res = call_deepseek_judge(hal_prompt)
-    # 这里 YES 代表有幻觉，NO 代表无幻觉
     is_hallucinated = 1 if "YES" in hal_res else 0
 
     return {
@@ -148,7 +155,22 @@ def main():
     index = VectorStoreIndex.from_vector_store(vector_store, embed_model=embed_model)
     
     # 构建查询引擎
-    query_engine = index.as_query_engine(similarity_top_k=3)
+    text_qa_template_str = (
+        "以下是参考文档信息：\n"
+        "---------------------\n"
+        "{context_str}\n"
+        "---------------------\n"
+        "请仅根据上述文档回答问题，不要编造信息。\n"
+        "问题：{query_str}\n"
+        "回答："
+    )
+    text_qa_template = PromptTemplate(text_qa_template_str)
+
+    # 应用到 query_engine
+    query_engine = index.as_query_engine(
+        text_qa_template=text_qa_template,
+        similarity_top_k=3
+    )
 
     # 4. 准备测试集
     print("Loading Dataset...")
