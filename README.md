@@ -1,26 +1,25 @@
-# LLM 课程作业提交 (LLM Course Assignments)
+# CWRU数据分析代理系统
 
-欢迎来到 LLM 课程作业提交仓库。本仓库用于管理和提交大模型原理与技术课程的相关作业。
+基于LLM Agent和DSPy框架的自动化数据分析系统，针对CWRU轴承故障诊断数据集为基础的大模型故障诊断分析。
 
-## ⚠️ 2025 年最新通知
+## 特性
 
-**请注意：2025 年度的课程作业要求、评分标准及提交指南均已更新。**
+- 🤖 **AI驱动分析**: 使用LLM Agent自动规划和分析流程
+- 🔄 **全自动化**: 从数据清洗到报告生成的全流程自动化
+- 📊 **多维分析**: 支持统计检验、可视化、机器学习建模
+- 📈 **智能洞察**: 基于DSPy的智能洞察生成
+- 🎨 **交互式界面**: 支持命令行交互模式
+- 📋 **报告输出**: 自动生成Markdown和PDF报告
 
-所有 2025 年的相关资料都位于 `LLM-Course-Assignments-2025` 文件夹下。在开始作业前，请务必仔细阅读该文件夹内的说明文档。
+## 快速开始
 
-👉 **[点击此处进入 2025 年作业文件夹](./LLM-Course-Assignments-2025)**
+### 1. 环境准备
 
----
+```bash
+# 克隆项目
+git clone <repository-url>
+cd cwru-data-analysis-agent
 
-## 📂 快速导航
-
-- **[LLM-Course-Assignments-2025](./LLM-Course-Assignments-2025)**: **(当前学期)** 2025 年作业说明。
-- **[教程](./tutorial.md)**: 新手教程。
-
-## 📝 提交须知
-
-1. 请进入 [LLM-Course-Assignments-2025](./LLM-Course-Assignments-2025) 文件夹。
-2. 按照该目录下的 `README` 或作业文档要求进行操作。
-3. 提交前请确保代码可以通过测试。
-
-祝您学习愉快！
+# 运行安装脚本
+chmod +x setup.sh
+./setup.sh

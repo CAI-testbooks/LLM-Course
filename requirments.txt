@@ -1,0 +1,36 @@
+# 核心依赖
+python==3.11.0
+dspy==2.2.6
+openai==1.12.0
+anthropic==0.25.1
+
+# 数据分析
+pandas==2.2.0
+numpy==1.26.4
+scikit-learn==1.4.1.post1
+statsmodels==0.14.1
+scipy==1.12.0
+
+# 可视化
+matplotlib==3.8.3
+seaborn==0.13.2
+plotly==5.19.0
+
+# 数据处理
+scikit-learn-intelex==2024.0.1
+missingno==0.5.2
+pycaret==3.3.0
+
+# 报告生成
+jupyter==1.0.0
+notebook==7.1.0
+nbconvert==7.14.2
+pandas-profiling==3.6.6
+markdown==3.5.2
+reportlab==4.1.0
+
+# 其他工具
+python-dotenv==1.0.1
+tqdm==4.66.2
+loguru==0.7.2
+rich==13.7.0
