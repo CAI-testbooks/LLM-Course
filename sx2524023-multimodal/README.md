@@ -56,5 +56,3 @@ python -m src.data.prepare --dataset chartqa --split val --max_samples 200
 python -m src.data.prepare --dataset chartqa --split train --max_samples 5000
 
 
-feat: multimodal vision-language assistant (Qwen2-VL, ChartQA)
-
