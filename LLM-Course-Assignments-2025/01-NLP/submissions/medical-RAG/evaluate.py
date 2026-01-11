@@ -74,7 +74,7 @@ def evaluate_single_sample(query_engine, question, reference):
     
     # 获取检索到的上下文
     retrieved_contexts = [n.get_content() for n in response_obj.source_nodes]
-    context_text = "\n\n".join(retrieved_contexts)[:3000]
+    context_text = "\n\n".join(retrieved_contexts)
 
     # 2. 计算 Rouge-L
     rouge_score = compute_rouge(pred_response, reference)
@@ -160,7 +160,7 @@ def main():
         "---------------------\n"
         "{context_str}\n"
         "---------------------\n"
-        "请仅根据上述文档回答问题，不要编造信息。\n"
+        "请严格根据提供的参考文档回答问题。答案只能根据参考文档内容生成，如果文档中没有答案，请直接说明“文档中未提及”，不要编造\n"
         "问题：{query_str}\n"
         "回答："
     )
