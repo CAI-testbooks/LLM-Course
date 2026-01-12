@@ -22,13 +22,13 @@
 
 本系统是一个面向大模型越狱/红队评测的可视化工具，采用“前端交互层（Gradio）—编排层（Attack/Defense/Eval 管理器）—基础能力层（LLM 接口、数据集加载）”的分层架构。整体流程围绕一次“攻击样本”的生命周期展开：输入（或抽样）→ 生成攻击提示词 → 可选防御处理 → 调用模型推理 → 评估是否越狱成功 → 汇总展示与统计 ASR（Attack Success Rate）。
 
-- **交互层（UI 层）**：由 [app.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/app.py) 使用 Gradio 构建多标签页界面，提供单次攻击、批量攻击、JailBench 随机测试等入口，负责参数收集、触发测试、展示提示词/响应/结果表格与 ASR。
-- **编排层（Orchestration）**：由 [app.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/app.py) 中的 `single_attack` / `batch_attack` / `jailbench_batch_attack` 组织调用链，串联攻击生成、防御、模型调用与评估，形成可复用的测试管线。
-- **攻击模块（Attack）**：由 [attack_manager.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/src/attacks/attack_manager.py) 提供 `generate_prompt`，支持 direct、template、base64、rot13、leetspeak、prefix_injection、research、poetry 等多种攻击策略，统一产出“可直接投喂模型的攻击提示词”。
-- **防御模块（Defense）**：由 [defense_manager.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/src/defenses/defense_manager.py)（项目中已存在）提供输入检测或系统提示词加固等能力，在推理前对攻击提示词进行拦截或改写。
-- **评估模块（Evaluation）**：由 [evaluator.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/src/evaluation/evaluator.py) 提供 `is_jailbroken`，通过拒答关键词/短回复等启发式规则判断是否越狱成功，并用于计算 ASR。
-- **模型适配层（LLM）**：由 [llm.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/src/models/llm.py)（项目中已存在）封装对通义千问兼容 OpenAI 接口的调用，向上层暴露统一的 `generate` 方法。
-- **数据层（Dataset）**：由 [dataset.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/src/data/dataset.py)（项目中已存在）加载与提供测试目标（如 AdvBench goals）；JailBench 测试则在 [app.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/app.py) 内直接用 Pandas 读取 `JailBench.csv` 并随机抽样。
+- **交互层（UI 层）**：由 app.py 使用 Gradio 构建多标签页界面，提供单次攻击、批量攻击、JailBench 随机测试等入口，负责参数收集、触发测试、展示提示词/响应/结果表格与 ASR。
+- **编排层（Orchestration）**：由 app.py 中的 `single_attack` / `batch_attack` / `jailbench_batch_attack` 组织调用链，串联攻击生成、防御、模型调用与评估，形成可复用的测试管线。
+- **攻击模块（Attack）**：由 [attack_manager.py 提供 `generate_prompt`，支持 direct、template、base64、rot13、leetspeak、prefix_injection、research、poetry 等多种攻击策略，统一产出“可直接投喂模型的攻击提示词”。
+- **防御模块（Defense）**：由 [defense_manager.py]（项目中已存在）提供输入检测或系统提示词加固等能力，在推理前对攻击提示词进行拦截或改写。
+- **评估模块（Evaluation）**：由 [evaluator.py]提供 `is_jailbroken`，通过拒答关键词/短回复等启发式规则判断是否越狱成功，并用于计算 ASR。
+- **模型适配层（LLM）**：由 [llm.py]（项目中已存在）封装对通义千问兼容 OpenAI 接口的调用，向上层暴露统一的 `generate` 方法。
+- **数据层（Dataset）**：由 [dataset.py]（项目中已存在）加载与提供测试目标（如 AdvBench goals）；JailBench 测试则在 [app.py]内直接用 Pandas 读取 `JailBench.csv` 并随机抽样。
 
 整体数据流可以概括为：
 
@@ -46,14 +46,14 @@
 
 ### 2.2.1 交互与编排模块（Gradio + Pipeline）
 
-- **文件位置**： [app.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/app.py)
+- **文件位置**： [app.py]
 - **职责**：
   - 构建三类测试入口：单次攻击、基于 AdvBench 的批量攻击、基于 JailBench 的随机批量攻击。
   - 将 UI 参数绑定到后端函数，组织“攻击生成→防御→推理→评估→统计”的完整链路。
   - 将结果格式化为 DataFrame 供前端表格展示。
 
 **(1) 单次攻击测试：`single_attack`**  
-- **代码位置**： [app.py:single_attack](file:///c:/Users/16525/Documents/trae_projects/aisafety/app.py#L27-L49)
+- **代码位置**： [app.py:single_attack]
 - **输入**：`goal, attack_method, template_name, defense_method`
 - **处理流程**：
   1. 调用 `attack_manager.generate_prompt` 生成最终 Prompt。
@@ -66,7 +66,7 @@
 - **输出**：`prompt, response, success_label, status`
 
 **(2) AdvBench 批量攻击测试：`batch_attack`**  
-- **代码位置**： [app.py:batch_attack](file:///c:/Users/16525/Documents/trae_projects/aisafety/app.py#L51-L70)
+- **代码位置**： [app.py:batch_attack]
 - **数据来源**：通过 `JailbreakDataset` 加载的 `data/harmful_behaviors.csv`（advbench）目标列表。
 - **逻辑**：
   - 取前 `N` 条 goal（由 UI 的 `sample_size` 控制），逐条调用 `single_attack`。
@@ -75,7 +75,7 @@
 - **输出**：ASR 文本 + 结果 DataFrame。
 
 **(3) JailBench 随机批量测试：`jailbench_batch_attack`**  
-- **代码位置**： [app.py:jailbench_batch_attack](file:///c:/Users/16525/Documents/trae_projects/aisafety/app.py#L72-L106)
+- **代码位置**： [app.py:jailbench_batch_attack]
 - **数据来源**：`c:\Users\16525\Documents\trae_projects\aisafety\JailBench.csv`
 - **逻辑**：
   1. `pd.read_csv` 读取数据，按用户设定次数 `sample_size` 进行 `df.sample(n=sample_size)` 随机抽样。
@@ -85,7 +85,7 @@
 - **特点**：与 AdvBench 的“goal→生成prompt”不同，这里“数据集已给出攻击提示词”，因此采用 direct 路径直接推理，适合做“按攻击语料随机抽测”的成功率估计。
 
 **(4) UI 绑定与展示**  
-- **代码位置**： [app.py:Gradio Blocks](file:///c:/Users/16525/Documents/trae_projects/aisafety/app.py#L108-L224)
+- **代码位置**： [app.py:Gradio Blocks]
 - **实现要点**：
   - 采用 `gr.Tab` 划分功能区，分别绑定 `btn_attack.click(single_attack, ...)`、`btn_batch.click(batch_attack, ...)`、`btn_jb_batch.click(jailbench_batch_attack, ...)`。
   - 结果区使用 `gr.Textbox` 展示 ASR，`gr.Dataframe` 展示结构化明细，便于导出或人工检查。
@@ -94,26 +94,26 @@
 
 ### 2.2.2 攻击生成模块（AttackManager）
 
-- **文件位置**： [attack_manager.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/src/attacks/attack_manager.py)
+- **文件位置**： [attack_manager.py]
 - **核心类**：`AttackManager`
 - **职责**：将“测试目标 goal”转换为“可诱导模型输出不安全内容的攻击提示词 prompt”，并对不同攻击方法进行统一封装。
 
 **(1) Prompt 生成入口：`generate_prompt`**  
-- **代码位置**： [attack_manager.py:generate_prompt](file:///c:/Users/16525/Documents/trae_projects/aisafety/src/attacks/attack_manager.py#L16-L67)
+- **代码位置**： [attack_manager.py:generate_prompt]
 - **统一输出结构**：
   - `prompt`：最终提示词（直接喂给模型）
   - `template_used`：若使用模板攻击，记录使用的模板名称
 - **支持方法与实现思路**：
   - `direct`：不改写，直接以 goal 作为 prompt。
-  - `template`：从 [templates.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/src/attacks/templates.py) 的 `JAILBREAK_TEMPLATES` 选定模板，用 `template.format(goal=goal)` 生成 prompt。
+  - `template`：从 [templates.py] 的 `JAILBREAK_TEMPLATES` 选定模板，用 `template.format(goal=goal)` 生成 prompt。
   - `prefix_injection`：通过固定前缀要求模型以某种“同意式开头”响应，诱导越狱。
   - `base64` / `rot13` / `leetspeak`：对 goal 进行编码/变形，构造“先解码再执行”的指令，尝试绕过简单过滤。
   - `research`：以“安全研究/防御目的”为掩护，诱导模型泄露不当内容。
   - `poetry`：两阶段策略：先让模型把 goal 改写成隐喻诗，再让模型“解析诗意并给出详细实操步骤”，属于更强的间接诱导方式。
 
 **(2) 执行攻击：`attack`**  
-- **代码位置**： [attack_manager.py:attack](file:///c:/Users/16525/Documents/trae_projects/aisafety/src/attacks/attack_manager.py#L69-L86)
-- **说明**：该函数在模块层面提供“生成 prompt + 调用模型推理”的一体化封装；但在当前系统主流程中，[app.py](file:///c:/Users/16525/Documents/trae_projects/aisafety/app.py) 为了插入防御与评估逻辑，主要使用 `generate_prompt` + 自行推理的方式进行更灵活的编排。
+- **代码位置**： [attack_manager.py:attack]
+- **说明**：该函数在模块层面提供“生成 prompt + 调用模型推理”的一体化封装；但在当前系统主流程中，[app.py]为了插入防御与评估逻辑，主要使用 `generate_prompt` + 自行推理的方式进行更灵活的编排。
 
 # 三、实验与结果分析
 
