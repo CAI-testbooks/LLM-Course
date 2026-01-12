@@ -1,9 +1,18 @@
-# 方向01：自然语言处理（NLP）综合作业
-
 ## 题目描述
-构建一个基于大语言模型的中文领域特定问答系统（Domain-Specific QA）。选择一个专业领域（如医疗、法律、金融或教育），收集领域数据集，实现一个支持长上下文、多轮对话的RAG（Retrieval-Augmented Generation）系统，能够准确回答专业问题并提供可解释的引用来源。
+
+构建一个基于Qwen-2.5-7B-Instruct模型的中文医疗领域智能问答系统。选择一个医疗专业领域，收集医疗领域中华佗数据集，实现一个支持32K长上下文、多轮对话的RAG（Retrieval-Augmented Generation）问答系统，能够准确回答专业的医疗领域的相关问题。
 
 ## 题目要求
+- **模型选择**
+(所有命令在/root/autodl-tmp下运行即可)
+首先先下载Qwen-2.5-7B-Instruct模型至本地，运行如下命令：python  model_download/download-qwen2.5-7b-instruct.py
+
+![模型下载1](/LLM-Course/LLM-Course-Assignments-2025/01-NLP/Medical-RAG/img/image1.png)
+
+![模型下载2](/LLM-Course/LLM-Course-Assignments-2025/01-NLP/Medical-RAG/img/image2.png)
+
+
+
 - **数据准备**：收集至少5k条领域QA对或文档（可使用公开数据集+爬取/合成），进行清洗、分块、构建向量数据库。
 - **模型选择与微调**：基于开源LLM（如Qwen-2.5、LLaMA-3.1或Gemma-2）实现RAG，可选LoRA/SFT微调提升领域准确率。
 - **核心功能**：支持多轮对话、长上下文（>32k tokens）、引用来源显示、拒绝不确定回答。
@@ -11,23 +20,4 @@
 - **部署**：使用Gradio/Streamlit/FastAPI构建Web demo，支持实时交互。
 - **评估**：使用准确率、引用F1、幻觉率等指标，比较基线与优化后版本。
 
-## 最后提交要求
-1. **代码提交**  
-   - 所有代码必须放在该GitHub仓库（推荐与作业PR关联）上。  
-   - 代码结构清晰，包含`README.md`说明运行环境、依赖安装和启动方式。  
-   - 必须包含完整的可复现脚本（数据处理、训练/微调、推理、评估、部署）。
 
-2. **报告提交**  
-   - 提交一份完整实验报告（推荐Markdown格式，也可PDF）。  
-   - 报告内容必须包括：项目概述、数据来源与处理、方法、实验结果（表格+曲线）、问题分析与创新点、Demo截图/链接、未来改进方向。
-
-3. **文件名命名规范**  
-   - 报告文件：`学号-姓名-01-NLP.md` 或 `学号-姓名-01-NLP.pdf`  
-   - 如有多个文件，可附加后缀，例如 `学号-姓名-01-NLP-附录.ipynb`
-
-4. **Pull Request 要求**    
-   - PR 标题格式：`[作业01-NLP] 学号 姓名 - 领域特定RAG问答系统`  
-   - PR 描述中必须填写 `.github/pull_request_template.md` 中的所有项，并附上代码仓库链接和Demo链接（如有）。
--在最后课程结束前都可以通过commit或者PR进行更新，通过更新次数来计算中间能力提升分数。
-
-请严格遵守以上规范，否则将影响评分。
