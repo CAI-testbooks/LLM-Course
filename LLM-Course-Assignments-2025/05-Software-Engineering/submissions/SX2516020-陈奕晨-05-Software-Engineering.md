@@ -34,38 +34,6 @@ Qwen2.5-Coder-7B，Deepseek-Coder-6.7B/Instruct在华为云ModelArts上进行，
 
 ## 核心代码实现
 
-### generator
-
-可以根据给出的prompt，让模型生成代码
-
-```py
-def generate(self, prompts, num_candidates=1):
-        
-        sampling_params = SamplingParams(
-            max_tokens=self.max_tokens,
-            temperature=self.temperature,
-            top_p=self.top_p,
-            stop=['<|endofblock|>', '<|endofmessage|>']
-        )
-        
-        expanded_prompts = []
-        for p in prompts:
-            expanded_prompts.extend([p] * num_candidates)
-        if self.lora_request:
-            outputs = self.llm.generate(expanded_prompts, sampling_params, lora_request=self.lora_request)
-        else:
-            outputs = self.llm.generate(expanded_prompts, sampling_params)
-            
-        completions: List[List[str]] = [[] for _ in range(len(prompts))]
-        
-        for i, out in enumerate(outputs):
-            prompt_index = i // num_candidates
-            for o in out.outputs:
-                completions[prompt_index].append(o.text)
-            
-        return completions
-```
-
 ### prompt生成
 
 可以根据不同模型，区别base/instruct模型进行构造prompt。由于KodCode数据集需要指定的函数定义，否则会无法使用数据集提供的测试代码进行测试，所以要在prompt中指定好函数定义
@@ -130,5 +98,84 @@ def build_prompt(question, test_info, model_type=None):
         prompt += "```python\n"
     
     return prompt
+```
+
+### generator
+
+可以根据给出的prompt，让模型生成代码
+
+```py
+def generate(self, prompts, num_candidates=1):
+        
+        sampling_params = SamplingParams(
+            max_tokens=self.max_tokens,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            stop=['<|endofblock|>', '<|endofmessage|>']
+        )
+        
+        expanded_prompts = []
+        for p in prompts:
+            expanded_prompts.extend([p] * num_candidates)
+        if self.lora_request:
+            outputs = self.llm.generate(expanded_prompts, sampling_params, lora_request=self.lora_request)
+        else:
+            outputs = self.llm.generate(expanded_prompts, sampling_params)
+            
+        completions: List[List[str]] = [[] for _ in range(len(prompts))]
+        
+        for i, out in enumerate(outputs):
+            prompt_index = i // num_candidates
+            for o in out.outputs:
+                completions[prompt_index].append(o.text)
+            
+        return completions
+```
+
+### evaluator
+
+在generator中生成完代码后，要使用KodCode数据集提供的测试代码测试代码执行是否通过，数据集中会包含多个测试样例，需要一个evaluator来自动测评，并且后边可以通过多进程同时评估多份代码。主要是使用pytest包创建子进程运行生成的代码，获取运行结果并返回给调用的地方
+
+```py
+'''evaluate the generated code'''
+
+import os
+import tempfile, subprocess
+
+class KodCodeEvaluator:
+    
+    def __init__(self, timeout: int=5):
+        self.timeout = timeout
+        
+    def evaluate(self, solution_code: str, test_code: str) -> bool:
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            solution_path = os.path.join(tmpdir, 'solution.py')
+            test_path =  os.path.join(tmpdir, 'test_solution.py')
+            
+            with open(solution_path, 'w', encoding='utf-8') as f:
+                f.write(solution_code)
+            
+            with open(test_path, 'w', encoding='utf-8') as f:
+                f.write(test_code)
+            
+            try:
+                result = subprocess.run(
+                    ["pytest", "test_solution.py", "-q", "--disable-warnings", "--maxfail=1"],
+                    cwd=tmpdir,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=self.timeout
+                )
+                # print("STDOUT:", result.stdout)
+                # print("STDERR:", result.stderr)
+                
+                return result.returncode == 0
+            
+            except subprocess.TimeoutExpired:
+                return False
+            except Exception as e:
+                return False
 ```
 
