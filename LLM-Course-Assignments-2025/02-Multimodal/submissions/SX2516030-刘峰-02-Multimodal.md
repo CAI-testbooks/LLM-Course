@@ -113,3 +113,49 @@ train代码的流程具体代码在`./train.py`
 链接: https://pan.baidu.com/s/1YVyuO2A4YgwciVn9rAxuYA?pwd=fr7n 提取码: fr7n
 
 ![image-20260110202400987](https://gitee.com/fouen/image/raw/master/image/20260110202402862.png)
+
+
+
+# 整体模型架构说明
+
+![image-20260112131809950](https://gitee.com/fouen/image/raw/master/image/20260112131810302.png)
+
+```bash
+【输入层】
+├─ 视觉输入: torch.Tensor (batch_size, 3, H, W) → RGB图像像素值
+└─ 文本输入: torch.LongTensor (batch_size, seq_len) → token化后的文本input_ids + labels(监督标签)
+
+【第一大模块：视觉特征提取分支 (只读不训练，梯度冻结)】
+→ SIGLIP-ViT 视觉编码器 (visualModel from visual.SIGLIP_VIT)
+   ├─ 核心行为：self.visualModel.get_image_features(pixel_values=image)
+   ├─ 关键细节：返回特征切片取 [:,1:, :] → 丢弃<CLS> [只保留图像patch特征]
+   ├─ 梯度策略：with torch.no_grad() + image_feature.detach() → 视觉模型全程冻结、不参与训练、不更新权重
+   ├─ 数据类型：强制转换为 torch.bfloat16 做推理加速，无精度损失
+   └─ 输出维度：(batch_size, image_context_length, Vhidden_dim) → 代码中设置的是 image_context_length=728
+
+【第二大模块：视觉特征投影对齐层 (可训练，独立权重，手动初始化)】
+→ 特征投影网络 self.feature_proj (nn.Sequential 双层线性+激活)
+   ├─ make_feature_proj 函数：
+      ✔ Linear(Vhidden_dim → Lhidden_dim) → GELU激活 → Linear(Lhidden_dim → Lhidden_dim)
+   ├─ 初始化策略：自定义正态初始化(weight: N(0,0.01)) + 偏置置零(bias: zero)
+   ├─ 核心作用：视觉特征维度对齐，把视觉编码器的输出维度 映射到 LLM的隐藏层维度
+   ├─ assert MMconfig.image_feature_hidden_size == self.LLM.config.hidden_size
+   └─ 输出维度：(batch_size, 728, Lhidden_dim) → 与LLM的token embedding维度完全一致
+
+【第三大模块：语言模型核心分支 (支持LoRA微调，核心计算层)】
+→ 选择MQWen大语言模型
+   ├─ 训练策略：
+      ✔ 梯度检查点：self.LLM.gradient_checkpointing_enable() → 节省显存
+      ✔ LoRA高效微调：make_lora() → 基于peft库，只训练attention相关模块，冻结LLM主干
+      ✔ dtype：统一使用 torch.bfloat16 精度训练/推理
+   ├─ 核心输入：文本input_ids + 对齐后的视觉特征image_feature (图文融合注入)
+   └─ 模型类型：因果语言模型(Causal LM) → 自回归生成，只预测下一个token
+
+【输出层】
+├─ 训练阶段：返回 CausalLMOutputWithPast → 包含loss、logits、past_key_values等完整输出
+└─ 推理阶段：generate函数返回 自回归生成的文本token序列 → 截取有效生成内容 [:, len(input_ids[0]):-1]
+
+【整体数据流程走向】
+图像 → SIGLIP-ViT提取特征 → 丢弃CLS → feature_proj维度对齐 → 注入MQWen LLM → 图文联合自回归生成/训练
+```
+
