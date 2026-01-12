@@ -20,48 +20,66 @@ ST_TITLE = "通用中文医疗领域智能问答系统"
 #MODEL_NAME = "/root/autodl-tmp/qwen/Qwen2___5-7B-Instruct"  # 本地模型路径
 MODEL_NAME = "/root/autodl-tmp/Medical-RAG/Tune-model/medical-qwen-merged"  # 修改为merage后的模型路径
 EMBEDDING_MODEL = "BAAI/bge-m3"
-VECTOR_DB_PATH = "./chroma_db_medical"  # ← 向量库持久化目录 本地已存在 Chroma 向量数据库（如 ./chroma_db_medical），就直接加载；如果不存在，则从文档构建并向磁盘保存。
+VECTOR_DB_PATH = "/root/autodl-tmp/Medical-RAG/chroma_db_medical"  # ← 向量库持久化目录 本地已存在 Chroma 向量数据库（如 ./chroma_db_medical），就直接加载；如果不存在，则从文档构建并向磁盘保存。
 # ==========================================
 # 自定义 JSONL 加载函数
 # ==========================================
-def load_jsonl_as_documents(file_path, use_answer_only=True):
-    """从 JSONL 文件加载为 LangChain Documents"""
+def load_alpaca_json_as_documents(file_path):
+    """
+    从 Alpaca 格式的 JSON 数组文件加载为 LangChain Documents
+    适配格式：[{"instruction": "问题", "input": "", "output": "答案"}, ...]
+    
+    Args:
+        file_path (str): JSON文件路径（Alpaca格式，数组）
+        拼接问题+答案
+    
+    Returns:
+        list[Document]: LangChain Document列表
+    """
     docs = []
-    with open(file_path, "r", encoding="utf-8") as f:
-        for line_num, line in enumerate(f, 1):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                data = json.loads(line)
-                questions = data.get("questions", [])
-                answers = data.get("answers", [])
-                
-                if not questions or not answers:
-                    continue
-                
-                question = questions[0]
-                if isinstance(question, list):
-                    question = question[0] if question else ""
-                answer = answers[0] if answers else ""
+    try:
+        # ✅ 关键修改1：整文件加载JSON数组（替代JSONL逐行读取）
+        with open(file_path, "r", encoding="utf-8") as f:
+            data_list = json.load(f)  # 直接加载整个JSON数组
+        
+        # 遍历每个Alpaca格式的条目
+        for idx, item in enumerate(data_list, 1):
+            # ✅ 关键修改2：字段映射（Alpaca格式→QA）
+            # 提取问题（instruction）、答案（output），input为空则忽略
+            instruction = item.get("instruction", "").strip()  # 对应原问题
+            output = item.get("output", "").strip()            # 对应原答案
+            input_text = item.get("input", "").strip()         # Alpaca的input字段（医疗场景为空）
 
-                # ✅ 关键修改：只用 Answer 作为 page_content   Huatuo 百科 QA 中的 Answer 正是由专业医生撰写的解释性文本，完全满足这些条件
-                # RAG 检索：从 仅由 train Answer 构建的向量库 中召回相关医学知识片段.性价比极高
-                # 模型生成：微调后的 Qwen 接收「用户问题 + 检索到的知识」作为上下文，生成最终回答
-                if use_answer_only:
-                    text = answer.strip()
-                else:
-                    text = f"问题：{question}\n答案：{answer}"
-
-                metadata = {
-                    "source_question": question,  # 保留原始问题用于追踪
-                    "source_file": os.path.basename(file_path),
-                    "line": line_num
-                }
-                docs.append(Document(page_content=text, metadata=metadata))
-            except json.JSONDecodeError as e:
-                st.warning(f"跳过解析错误行 {file_path}:{line_num}")
+            # 过滤无效条目（无问题/无答案）
+            if not instruction or not output:
+                st.warning(f"跳过无效条目（索引{idx}）：无问题或无答案")
                 continue
+
+            # ✅ 现在总是拼接问题+答案（不再有条件判断）
+            page_content = f"问题：{instruction}\n答案：{output}"
+
+            # ✅ 元数据优化：保留原始信息用于追踪
+            metadata = {
+                "source_instruction": instruction,  # 原始问题（替代原source_question）
+                "source_file": os.path.basename(file_path),
+                "item_index": idx,  # 条目索引（替代原行号，JSON数组无行号）
+                "has_input": True if input_text else False  # 标记是否有input（医疗场景为False）
+            }
+
+            # 创建LangChain Document对象并加入列表
+            docs.append(Document(page_content=page_content, metadata=metadata))
+
+    except json.JSONDecodeError as e:
+        st.error(f"JSON解析失败：{file_path} 不是合法的JSON数组格式 - {e}")
+        return []
+    except FileNotFoundError:
+        st.error(f"文件不存在：{file_path}")
+        return []
+    except Exception as e:
+        st.error(f"加载文件出错：{e}")
+        return []
+
+    st.success(f"成功加载 {len(docs)} 条有效医疗QA数据（来自{os.path.basename(file_path)}）")
     return docs
 
 # ==========================================
@@ -88,14 +106,16 @@ def initialize_rag_system():
     else:
         # === 需要重新构建向量库 ===
         json_files = [
-            os.path.join(dataset_dir, "train_data_8k.json") # ← 仅训练集的answer作为向量库！构建即可，后续加入QA对进行微调即可
+            os.path.join(dataset_dir, "alpaca_formatted_test_data.json"),
+            os.path.join(dataset_dir, "alpaca_formatted_validation_data.json"),
+            os.path.join(dataset_dir, "alpaca_formatted_train_data.json") # 如果是构建RAG系统的话，使用全部的answer进行向量数据库持久化即可，后续加入QA对进行微调即可
         ]
         
         docs = []
         for file_path in json_files:
             if os.path.exists(file_path):
                 st.info(f"正在加载: {os.path.basename(file_path)}")
-                file_docs = load_jsonl_as_documents(file_path, use_answer_only=True)# ← 只用 Answer
+                file_docs = load_alpaca_json_as_documents(file_path)# ← 拼接Q A对
                 docs.extend(file_docs)
                 st.success(f"完成加载: {len(file_docs)} 条记录 from {os.path.basename(file_path)}")
             else:
@@ -104,7 +124,7 @@ def initialize_rag_system():
         if not docs:
             return None, "未加载到任何有效文档"
 
-        # 切分
+       
         splitter = RecursiveCharacterTextSplitter(chunk_size=300, chunk_overlap=50)
         splits = splitter.split_documents(docs)
 
@@ -118,7 +138,7 @@ def initialize_rag_system():
         )
         st.success("✅ 向量库构建完成并已保存至本地！")
 
-    # 检索器
+    # 检索器 - 调整k值以适应更大的chunk_size
     retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
 
     # 加载本地 Qwen-2.5-7B 模型（带量化以节省显存）
@@ -139,14 +159,15 @@ def initialize_rag_system():
         "text-generation",
         model=model,
         tokenizer=tokenizer,
-        max_new_tokens=1024,
+        max_new_tokens=512,
         temperature=0.1,
         top_p=0.95,
         repetition_penalty=1.1,
         do_sample=True,
         pad_token_id=tokenizer.pad_token_id,   # ← 必须
         eos_token_id=tokenizer.eos_token_id,   # ← 推荐
-        clean_up_tokenization_spaces=True
+        clean_up_tokenization_spaces=True,
+        early_stopping=True      # 生成到结束符自动停止，避免冗余
     )
     #llm_pipeline = HuggingFacePipeline(pipeline=pipe)
 
@@ -160,24 +181,17 @@ def initialize_rag_system():
         tokenizer=tokenizer,
         streaming=True
     )
-    # Prompt
-#     template = """<|im_start|>system
-# 你是一个专业的医疗AI助手。请结合以下【医学知识】回答用户问题。如果不知道，请直接说"根据现有医学资料，我无法提供确切答案，建议咨询专业医生"。
 
-# 【医学知识】：
-# {context}<|im_end|>
-# <|im_start|>user
-# {question}<|im_end|>
-# <|im_start|>assistant
-# """
+    # 同时优化Prompt模板（减少模型无意义列举）
     template = """
-    你是一个专业的医疗AI助手。请结合以下【医学知识】回答用户问题。
+    你是一个专业的医学助手。
+    回答要求：1. 条理清晰；2. 禁止重复表述；3. 生成答案时，不做冗余推理
     如果不知道，请直接说"根据现有医学资料，我无法提供确切答案，建议咨询专业医生"。
 
-    【医学知识】：
+    医学知识：
     {context}
 
-    【用户问题】：
+    用户问题：
     {question}
     """
     prompt = ChatPromptTemplate.from_template(template)
