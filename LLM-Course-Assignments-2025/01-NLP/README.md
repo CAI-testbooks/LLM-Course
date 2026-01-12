@@ -75,6 +75,8 @@ python model_download/download-qwen2.5-7b-instruct.py
 
 ```bash
 pip install langchain langchain-community langchain-openai chromadb python-dotenv streamlit
+
+python -m streamlit run Medical-RAG/Medical-RAG.py 
 ```
 
 **功能特性：**
