@@ -2,8 +2,9 @@
 
 ## 项目概述
 
-这是一个基于LangChain和阿里云通义千问构建的RAG（检索增强生成）系统，专门针对Mental Health数据集进行优化。系统支持多层级文本切片、语义检索和灵活的相似度计算。
-
+这是一个基于LangChain和阿里云通义千问构建的RAG（检索增强生成）系统，专门针对Mental Health数据集进行优化。
+系统支持多层级文本切片、语义检索和灵活的相似度计算。
+数据集来自huggingface的PrinceAyush/Mental_Health_conv
 ## 核心特性
 
 ### 🔍 智能检索
@@ -20,10 +21,10 @@
 
 默认使用加权平均：
 ```
-最终相似度 = 0.6 * questionTitle相似度 + 0.4 * questionText相似度
+最终相似度 = 0.5 * questionTitle相似度 + 0. 35* questionText相似度+ 0. 15* AnswerText相似度
 ```
 
-支持扩展为：
+扩展为：
 ```
 最终相似度 = w1 * questionTitle相似度 + w2 * questionText相似度 + w3 * answerText相似度
 ```
@@ -53,6 +54,8 @@ pip install dashscope langchain langchain-community faiss-cpu numpy
 # 设置环境变量
 export DASHSCOPE_API_KEY=your_dashscope_api_key_here
 export ALIBABA_CLOUD_REGION=cn-beijing
+#set DASHSCOPE_API_KEY=your_dashscope_api_key_here
+#set ALIBABA_CLOUD_REGION=cn-beijing
 ```
 
 或创建 `.env.qwen` 文件：
@@ -83,9 +86,9 @@ rag = QwenRAGSystem(
     chunk_size=500,
     chunk_overlap=100,
     retrieval_config=RetrievalConfig(
-        title_weight=0.6,
-        question_weight=0.4,
-        answer_weight=0.0
+        title_weight=0.5,
+        question_weight=0.35,
+        answer_weight=0.15
     )
 )
 
@@ -102,22 +105,6 @@ results = rag.search("什么是恐慌发作？", top_k=5)
 answer = rag.generate_response("什么是恐慌发作？", top_k=5)
 ```
 
-## 支持的模型
-
-### LLM模型（通义千问系列）
-
-| 模型名称 | 特点 | 适用场景 |
-|----------|------|----------|
-| `qwen-turbo` | 快速响应，成本较低 | 快速原型开发，实时应用 |
-| `qwen-plus` | 平衡性能和质量 | 生产环境推荐 |
-| `qwen-max` | 最佳质量，复杂推理 | 高质量生成需求 |
-
-### Embedding模型
-
-| 模型名称 | 特点 | 适用场景 |
-|----------|------|----------|
-| `text-embedding-v1` | 基础版本，成本较低 | 基础文本相似度任务 |
-| `text-embedding-v2` | 推荐版本，效果更好 | 高质量语义检索 |
 
 ## 核心类说明
 
@@ -132,14 +119,6 @@ answer = rag.generate_response("什么是恐慌发作？", top_k=5)
 
 ### RetrievalConfig
 检索配置类，用于控制相似度计算的权重：
-
-```python
-config = RetrievalConfig(
-    title_weight=0.6,    # questionTitle权重
-    question_weight=0.4, # questionText权重
-    answer_weight=0.0    # answerText权重
-)
-```
 
 ### 扩展接口
 
@@ -173,11 +152,6 @@ def _adaptive_similarity_weights(self, query: str, record: DataRecord) -> Tuple[
 ### 3. 检索参数调优
 - `top_k`: 控制候选文档数量，平衡准确性和计算成本
 - 相似度阈值：过滤低相似度结果
-
-### 4. 模型选择建议
-- **快速原型**: `qwen-turbo` + `text-embedding-v1`
-- **生产环境**: `qwen-plus` + `text-embedding-v2`
-- **高质量需求**: `qwen-max` + `text-embedding-v2`
 
 ## 注意事项
 
