@@ -4,6 +4,20 @@
 
 Code generation任务上，想通过改变训练数据的学习模式，通过逐步给模型数据学习，实时获取运行结果，分配下一轮训练的任务，包括新题目和需要回顾的旧题，进行**lora微调**，达到类似反思的作用，并相当于给不同表现的题目不同的学习权重；同时使用过程中每个问题的多个执行结果，构建DPO的pair对，再进行**DPO**
 
+## 主要成果与创新点
+
+- 动态调整训练样本的权重或出现频率，让模型针对容易出错的代码片段进行更高频率的强化训练，对已掌握的简单模式减少计算资源投入，实现了训练资源的自适应分配
+- 结合了自监督和自蒸馏，利用模型自身生成高质量的代码作为伪标签，再通过自蒸馏将知识压缩回模型，降低了对外部数据的依赖
+- 改变训练策略，改善模型在学习新代码库或新语言特性时丢失旧知识的问题，提高了数据的样本利用效率
+
+## 自评得分点
+
+- 过程性迭代（30分）：27分，提交频率高，代码更新质量高，问题解决能力良好
+- 项目完整性与复现性（20分）：20分，代码可完整运行，文档清晰，环境依赖清晰
+- 技术深度与创新（30分）：28分，合理使用大模型技术，对主流模型有较好的改进创新，并且在多个模型上进行实验测试，大部分可以做到提升性能。但在Qwen2.5-coder-7B和Deepseek-coder-6.7B-base上表现不佳，仍需改进
+- 报告质量（15分）：13分，结构清晰、图表完整、分析深入
+- Demo 与展示效果（5分）：4分，实验结果截图展示完整，并保存有结果文件
+
 ## 实验设置
 
 ### 模型
@@ -16,11 +30,19 @@ Deepseek-Coder-6.7B-Instruct
 
 ### 数据集
 
+#### 训练集
+
 KodCode-V1：https://huggingface.co/datasets/KodCode/KodCode-V1
 
 该数据集包含12个独立子集，覆盖多个领域（从算法知识到特定软件包知识）和难度级别（从基础编程练习到面试题及竞赛编程挑战）。KodCode 同时支持监督式微调（SFT）和强化学习调优（RL tuning）。
 
 数据集包含：题目来源，题目描述，测试代码（需要使用指定的函数定义），标准解法等等
+
+#### 测试集
+
+HumanEval(base/plus)
+
+Mbpp(base/plus)
 
 ### 推理
 
@@ -404,5 +426,81 @@ class Scheduler:
         return all_tasks
 ```
 
+## 测试结果
 
+测试pass@1
+
+|            models            | HumanEval | HumanEval+ | Mbpp  | Mbpp+ |
+| :--------------------------: | :-------: | :--------: | :---: | :---: |
+|      Qwen2.5-Coder-1.5B      |   0.446   |   0.393    | 0.656 | 0.545 |
+|  Qwen2.5-Coder-1.5B（改进）  |   0.683   |    0.61    | 0.743 | 0.63  |
+|       Qwen2.5-Coder-7B       |   0.799   |   0.732    | 0.823 | 0.701 |
+|   Qwen2.5-Coder-7B（改进）   |   0.756   |   0.732    | 0.817 | 0.698 |
+| Deepseek-Coder-6.7B-Instruct |   0.591   |   0.549    | 0.704 | 0.611 |
+|        DS6.7B（改进）        |   0.622   |   0.561    | 0.712 | 0.614 |
+
+发现在Qwen2.5-Coder-7B上未能提升，其他模型有提升
+
+Deepseek-Coder-6.7B-base表现不佳，无法根据prompt生成指定函数定义的代码，导致无法进行评估，放弃测试
+
+## 生成结果
+
+### KodCode
+
+取部分KodCode中的代码生成结果：
+
+![image-20260112210444870](./SX2516020-陈奕晨-05-Software-Engineering.assets/image-20260112210444870.png)
+
+```json
+{"task_id": 0, "completion": "def min_swaps_to_sort(heights):\n    nums = heights\n    sorted_nums = sorted(nums)\n    indices = {n:i for i,n in enumerate(nums)}\n    visited = [False]*len(nums)\n    swaps = 0\n    for i in range(len(nums)):\n        if visited[i] or i == indices[sorted_nums[i]]:\n            continue\n        cycle_size = 0\n        j = i\n        while not visited[j]:\n            visited[j] = True\n            j = indices[sorted_nums[j]]\n            cycle_size += 1\n        if cycle_size > 0:\n            swaps += (cycle_size - 1)\n    return swaps"}
+{"task_id": 0, "completion": "def min_swaps_to_sort(heights):\n    n = len(heights)\n    students = list(enumerate(heights))\n    students.sort(key=lambda x:x[1])\n    visited = [False]*n\n    ans = 0\n    for i in range(n):\n        if visited[i] or students[i][0] == i:\n            continue\n        cycle_size = 0\n        j = i\n        while not visited[j]:\n            visited[j] = True\n            j = students[j][0]\n            cycle_size += 1\n        if cycle_size > 0:\n            ans += (cycle_size - 1)\n    return ans"}
+{"task_id": 0, "completion": "def min_swaps_to_sort(heights):\n    n = len(heights)\n    arrpos = [*enumerate(heights)]\n    arrpos.sort(key=lambda x:x[1])\n    vis = {k:False for k in range(n)}\n    cnt = 0\n    for i in range(n):\n        if vis[i] or i == arrpos[i][0]:\n            continue\n        cycle_size = 0\n        j = i\n        while not vis[j]:\n            vis[j] = True\n            j = arrpos[j][0]\n            cycle_size += 1\n        if cycle_size > 0:\n            cnt += (cycle_size - 1)\n    return cnt"}
+{"task_id": 0, "completion": "def min_swaps_to_sort(heights):\n    temp = heights[:]\n    temp.sort()\n    heights_dict = {v:i for i,v in enumerate(heights)}\n    swapped = True\n    swaps = 0\n    while swapped:\n        swapped = False\n        for i in range(len(temp) - 1):\n            if temp[i] != heights[i]:\n                swapped = True\n                swaps += 1\n                temp[i], temp[heights_dict[heights[i]]] = temp[heights_dict[heights[i]]], temp[i]\n                heights_dict[heights[i]] = heights_dict[heights[heights_dict[heights[i]]]]\n                heights_dict[heights[heights_dict[heights[i]]]] = i\n    return swaps"}
+{"task_id": 0, "completion": "def min_swaps_to_sort(heights):\n    arr = sorted(heights)\n    count = 0\n    i = 0\n    while i < len(heights):\n        if heights[i] != arr[i]:\n            count += 1\n            temp = heights[i]\n            heights[i] = heights[heights.index(arr[i])]\n            heights[heights.index(arr[i])] = temp\n        else:\n            i += 1\n    return count"}
+{"task_id": 1, "completion": "def min_elements_to_remove(arr, target_sum):\n    arr.sort()\n    n = len(arr)\n    current_sum = 0\n    count = 0\n    i = 0\n    while i<n:\n        if current_sum + arr[i] <= target_sum:\n            current_sum += arr[i]\n            i += 1\n        else:\n            count += 1\n            n -= 1\n    return -1 if current_sum < target_sum else count"}
+{"task_id": 1, "completion": "def min_elements_to_remove(arr, target_sum):\n    dp = [0] + [-1]*target_sum\n    for num in arr:\n        for i in range(target_sum, num-1, -1):\n            if dp[i-num] != -1:\n                dp[i] = max(dp[i], dp[i-num] + 1)\n    return -1 if dp[-1] == -1 else len(arr) - dp[-1]"}
+{"task_id": 1, "completion": "def min_elements_to_remove(arr, target_sum):\n    def knapsack(n, W, wt, val):\n        if W == 0 or n == 0:\n            return 0\n        if wt[n-1] > W:\n            return knapsack(n-1, W, wt, val)\n        else:\n            return max(val[n-1] + knapsack(n-1, W-wt[n-1], wt, val), knapsack(n-1, W, wt, val))\n\n    total_sum = sum(arr)\n    if total_sum < target_sum:\n        return -1\n\n    n = len(arr)\n    wt = arr\n    val = arr\n    W = total_sum - target_sum\n    max_val = knapsack(n, W, wt, val)\n    return n - max_val"}
+{"task_id": 1, "completion": "def min_elements_to_remove(arr, target_sum):\n    n = len(arr)\n    dp = [float('inf')] * (target_sum + 1)\n    dp[0] = 0\n    for i in range(n):\n        for j in range(target_sum, arr[i] - 1, -1):\n            dp[j] = min(dp[j], dp[j - arr[i]] + 1)\n    return -1 if dp[target_sum] == float('inf') else n - dp[target_sum]"}
+{"task_id": 1, "completion": "def min_elements_to_remove(arr, target_sum):\n    arr.sort()\n    n = len(arr)\n    curr_sum = 0\n    count = 0\n    i = 0\n    while curr_sum < target_sum and i < n:\n        curr_sum += arr[i]\n        if curr_sum <= target_sum:\n            count += 1\n        i += 1\n    if curr_sum < target_sum:\n        return -1\n    return n - count"}
+{"task_id": 2, "completion": "def longest_palindrome_substring_length(s1, s2):\n    m, n = len(s1), len(s2)\n    dp = [[0]*(n+1) for _ in range(m+1)]\n    for i in range(m+1):\n        for j in range(n+1):\n            if i == 0 or j == 0:\n                dp[i][j] = 0\n            elif s1[i-1] == s2[j-1]:\n                dp[i][j] = dp[i-1][j-1] + 1\n            else:\n                dp[i][j] = max(dp[i-1][j], dp[i][j-1])\n    return dp[m][n]"}
+{"task_id": 2, "completion": "def longest_palindrome_substring_length(s1, s2):\n    n, m = len(s1), len(s2)\n    dp = [[0] * (m + 1) for _ in range(n + 1)]\n    for i in range(n - 1, -1, -1):\n        for j in range(m - 1, -1, -1):\n            if s1[i] == s2[j]:\n                dp[i][j] = dp[i + 1][j + 1] + 1\n            else:\n                dp[i][j] = max(dp[i + 1][j], dp[i][j + 1])\n    return dp[0][0]"}
+{"task_id": 2, "completion": "def longest_palindrome_substring_length(s1, s2):\n    dp = [[0 for _ in range(len(s2) + 1)] for _ in range(len(s1) + 1)]\n    for i in range(len(s1) - 1, -1, -1):\n        for j in range(len(s2) - 1, -1, -1):\n            if s1[i] == s2[j]:\n                dp[i][j] = dp[i + 1][j + 1] + 1\n            else:\n                dp[i][j] = max(dp[i + 1][j], dp[i][j + 1])\n    return dp[0][0]"}
+{"task_id": 2, "completion": "def longest_palindrome_substring_length(s1, s2):\n    n, m = len(s1), len(s2)\n    dp = [[0] * (m + 1) for _ in range(n + 1)]\n    for i in range(n - 1, -1, -1):\n        for j in range(m - 1, -1, -1):\n            dp[i][j] = max(dp[i + 1][j], dp[i][j + 1], dp[i + 1][j + 1] + (s1[i] == s2[j]))\n    return dp[0][0] * 2"}
+{"task_id": 2, "completion": "def longest_palindrome_substring_length(s1, s2):\n    dp = [[0]*(len(s2)+1) for _ in range(len(s1)+1)]\n    for i in range(len(s1)-1, -1, -1):\n        for j in range(len(s2)-1, -1, -1):\n            if s1[i] == s2[j]:\n                dp[i][j] = dp[i+1][j+1] + 1\n            else:\n                dp[i][j] = max(dp[i+1][j], dp[i][j+1])\n    return dp[0][0]"}
+{"task_id": 3, "completion": "def threeSum(nums, target):\n    nums.sort()\n    res = []\n    for i in range(len(nums)-2):\n        if i > 0 and nums[i] == nums[i-1]:\n            continue\n        l, r = i+1, len(nums)-1\n        while l < r:\n            s = nums[i] + nums[l] + nums[r]\n            if s < target:\n                l +=1 \n            elif s > target:\n                r -= 1\n            else:\n                res.append((nums[i], nums[l], nums[r]))\n                while l < r and nums[l] == nums[l+1]:\n                    l += 1\n                while l < r and nums[r] == nums[r-1]:\n                    r -= 1\n                l += 1; r -= 1\n    return res"}
+{"task_id": 3, "completion": "def threeSum(nums, target):\n    nums.sort()\n    result = []\n    for i in range(len(nums) - 2):\n        if i > 0 and nums[i] == nums[i - 1]:\n            continue\n        l, r = i + 1, len(nums) - 1\n        while l < r:\n            s = nums[i] + nums[l] + nums[r]\n            if s < target:\n                l +=1 \n            elif s > target:\n                r -= 1\n            else:\n                result.append((nums[i], nums[l], nums[r]))\n                while l < r and nums[l] == nums[l + 1]:\n                    l += 1\n                while l < r and nums[r] == nums[r - 1]:\n                    r -= 1\n                l += 1; r -= 1\n    return result"}
+{"task_id": 3, "completion": "def threeSum(nums, target):\n    nums.sort()\n    res = []\n    for i in range(len(nums)-2):\n        if i > 0 and nums[i] == nums[i-1]:\n            continue\n        l, r = i+1, len(nums)-1\n        while l < r:\n            s = nums[i] + nums[l] + nums[r]\n            if s < target:\n                l +=1 \n            elif s > target:\n                r -= 1\n            else:\n                res.append((nums[i], nums[l], nums[r]))\n                while l < r and nums[l] == nums[l+1]:\n                    l += 1\n                while l < r and nums[r] == nums[r-1]:\n                    r -= 1\n                l += 1; r -= 1\n    return res"}
+{"task_id": 3, "completion": "def threeSum(nums, target):\n    nums.sort()\n    result = []\n    for i in range(len(nums)-2):\n        if i > 0 and nums[i] == nums[i-1]:\n            continue\n        l, r = i+1, len(nums)-1\n        while l < r:\n            s = nums[i] + nums[l] + nums[r]\n            if s < target:\n                l +=1 \n            elif s > target:\n                r -= 1\n            else:\n                result.append((nums[i], nums[l], nums[r]))\n                while l < r and nums[l] == nums[l+1]:\n                    l += 1\n                while l < r and nums[r] == nums[r-1]:\n                    r -= 1\n                l += 1\n                r -= 1\n    return result"}
+{"task_id": 3, "completion": "def threeSum(nums, target):\n    nums.sort()\n    result = []\n    for i in range(len(nums)-2):\n        if i>0 and nums[i]==nums[i-1]:\n            continue\n        l, r = i+1, len(nums)-1\n        while l<r:\n            s = nums[i]+nums[l]+nums[r]\n            if s<target:\n                l +=1 \n            elif s>target:\n                r -= 1\n            else:\n                result.append((nums[i],nums[l],nums[r]))\n                while l<r and nums[l]==nums[l+1]:\n                    l += 1\n                while l<r and nums[r]==nums[r-1]:\n                    r -= 1\n                l += 1; r -= 1\n    return result"}
+```
+
+### HumanEval
+
+取部分HumanEval的生成结果
+
+![image-20260112210351290](./SX2516020-陈奕晨-05-Software-Engineering.assets/image-20260112210351290.png)
+
+```json
+{"task_id": "HumanEval/0", "completion": "from typing import List\n\ndef has_close_elements(numbers: List[float], threshold: float) -> bool:\n    \"\"\" Check if in given list of numbers, are any two numbers closer to each other than\n    given threshold.\n    >>> has_close_elements([1.0, 2.0, 3.0], 0.5)\n    False\n    >>> has_close_elements([1.0, 2.8, 3.0, 4.0, 5.0, 2.0], 0.3)\n    True\n    \"\"\"\n    numbers.sort()\n    for i in range(1, len(numbers)):\n        if numbers[i] - numbers[i - 1] < threshold:\n            return True\n    return False"}
+{"task_id": "HumanEval/1", "completion": "from typing import List\n\ndef separate_paren_groups(paren_string: str) -> List[str]:\n    paren_string = paren_string.replace(\" \", \"\")\n    result = []\n    stack = []\n    temp = \"\"\n    for char in paren_string:\n        if char == '(':\n            if temp:\n                stack.append(temp)\n                temp = \"\"\n            stack.append(char)\n        elif char == ')':\n            stack.append(char)\n            while stack and stack[-1] != '(':\n                temp = stack.pop() + temp\n                if stack and stack[-1] == '(':\n                    temp = stack.pop() + temp\n                    break\n            if stack and stack[-1] == '(':\n                stack.pop()\n            result.append(temp)\n            temp = \"\"\n    return result\n\nprint(separate_paren_groups('( ) (( )) (( )( ))'))"}
+{"task_id": "HumanEval/2", "completion": "def truncate_number(number: float) -> float:\n    \"\"\" Given a positive floating point number, it can be decomposed into\n    and integer part (largest integer smaller than given number) and decimals\n    (leftover part always smaller than 1).\n\n    Return the decimal part of the number.\n    >>> truncate_number(3.5)\n    0.5\n    \"\"\"\n    return number - int(number)"}
+{"task_id": "HumanEval/3", "completion": "from typing import List\n\ndef below_zero(operations: List[int]) -> bool:\n    balance = 0\n    for operation in operations:\n        balance += operation\n        if balance < 0:\n            return True\n    return False"}
+{"task_id": "HumanEval/4", "completion": "from typing import List\n\ndef mean_absolute_deviation(numbers: List[float]) -> float:\n    mean = sum(numbers) / len(numbers)\n    abs_diffs = [abs(x - mean) for x in numbers]\n    mad = sum(abs_diffs) / len(abs_diffs)\n    return mad\n\nprint(mean_absolute_deviation([1.0, 2.0, 3.0, 4.0]))"}
+{"task_id": "HumanEval/5", "completion": "from typing import List\n\ndef intersperse(numbers: List[int], delimeter: int) -> List[int]:\n    result = []\n    for i in range(len(numbers)):\n        result.append(numbers[i])\n        if i < len(numbers) - 1:\n            result.append(delimeter)\n    return result\n```\n\nThis function works by iterating over the input list `numbers`. For each element, it appends it to the `result` list. If the element is not the last one in the list, it also appends the delimeter to the `result` list. The function finally returns the `result` list.\n\nYou can test this function with the following code:\n\n```python\nprint(intersperse([], 4))  # Output: []\nprint(intersperse([1, 2, 3], 4))  # Output: [1, 4, 2, 4, 3]"}
+```
+
+### Mbpp
+
+取部分Mbpp中的生成结果
+
+![image-20260112210425520](./SX2516020-陈奕晨-05-Software-Engineering.assets/image-20260112210425520.png)
+
+```json
+{"task_id": "Mbpp/2", "completion": "def similar_elements(list1, list2):\n    return set(list1) & set(list2)\n\nassert set(similar_elements((3, 4, 5, 6),(5, 7, 4, 10))) == set((4, 5))"}
+{"task_id": "Mbpp/3", "completion": "def is_not_prime(n):\n    if n <= 1:\n        return True\n    elif n <= 3:\n        return False\n    elif n % 2 == 0 or n % 3 == 0:\n        return True\n    i = 5\n    while i * i <= n:\n        if n % i == 0 or n % (i + 2) == 0:\n            return True\n        i += 6\n    return False\n\nassert is_not_prime(2) == False"}
+{"task_id": "Mbpp/4", "completion": "import heapq\n\ndef heap_queue_largest(nums, n):\n    return heapq.nlargest(n, nums)\n\nprint(heap_queue_largest([25, 35, 22, 85, 14, 65, 75, 22, 58], 3))\n```\n\nThis code uses the built-in `heapq.nlargest` function from Python's heapq module to find the n largest integers in the given list. The function returns the n largest elements in the list in descending order.\n\nThe assertion in the problem statement is a test case for this function. If the function is implemented correctly, it should pass this assertion.\n\nThe output of this code will be:\n```python\n[85, 75, 65]"}
+{"task_id": "Mbpp/6", "completion": "def differ_At_One_Bit_Pos(num1, num2):\n    return bin(num1 ^ num2).count('1') == 1\n\nassert differ_At_One_Bit_Pos(13,9) == True"}
+{"task_id": "Mbpp/7", "completion": "def find_char_long(s):\n    return [word for word in s.split() if len(word) >= 4]\n\nassert set(find_char_long('Please move back to stream')) == set(['Please', 'move', 'back', 'stream'])"}
+{"task_id": "Mbpp/8", "completion": "def square_nums(lst):\n    return [i ** 2 for i in lst]\n\nassert square_nums([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])==[1, 4, 9, 16, 25, 36, 49, 64, 81, 100]"}
+```
 
