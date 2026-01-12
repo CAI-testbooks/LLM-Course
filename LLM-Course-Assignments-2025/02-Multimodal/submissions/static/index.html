@@ -2,34 +2,93 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <title>环境识别 Demo</title>
+    <title>军事场景识别 Demo（图片+视频）</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        #result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; background-color: #f9f9f9; }
+        .upload-area { margin: 20px 0; padding: 15px; border: 2px dashed #ccc; border-radius: 8px; }
+        #result { margin-top: 20px; padding: 15px; border: 1px solid #ccc; background-color: #f9f9f9; border-radius: 8px; white-space: pre-wrap; }
+        #preview { margin-top: 10px; max-width: 400px; max-height: 300px; }
+        button { padding: 8px 20px; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
     </style>
 </head>
 <body>
-    <h1>室外环境识别 Demo</h1>
-    <input type="file" id="imageInput" accept="image/*">
-    <button onclick="uploadImage()">上传并分析</button>
-    <div id="result">结果将显示在这里</div>
+    <h1>军事场景识别 Demo（支持图片/视频）</h1>
+
+    <div class="upload-area">
+        <h3>上传文件（支持图片：jpg/png；视频：mp4/avi）</h3>
+        <input type="file" id="mediaInput" accept="image/*,video/*">
+        <button onclick="uploadMedia()">上传并分析</button>
+        <!-- 预览上传的文件 -->
+        <div id="preview"></div>
+    </div>
+
+    <div id="result">结果将显示在这里...</div>
 
     <script>
-        async function uploadImage() {
-            const fileInput = document.getElementById('imageInput');
-            const file = fileInput.files[0];
+        // 预览上传的文件（图片/视频）
+        const mediaInput = document.getElementById('mediaInput');
+        mediaInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
             if (!file) return;
+
+            const preview = document.getElementById('preview');
+            preview.innerHTML = '';
+
+            if (file.type.startsWith('image')) {
+                // 预览图片
+                const img = document.createElement('img');
+                img.src = URL.createObjectURL(file);
+                img.style.maxWidth = '400px';
+                img.style.maxHeight = '300px';
+                preview.appendChild(img);
+            } else if (file.type.startsWith('video')) {
+                // 预览视频
+                const video = document.createElement('video');
+                video.src = URL.createObjectURL(file);
+                video.controls = true;
+                video.style.maxWidth = '400px';
+                video.style.maxHeight = '300px';
+                preview.appendChild(video);
+            }
+        });
+
+        // 上传并分析文件
+        async function uploadMedia() {
+            const fileInput = document.getElementById('mediaInput');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('请先选择文件！');
+                return;
+            }
+
+            // 显示加载中
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = '正在分析，请稍候...';
 
             const formData = new FormData();
             formData.append('file', file);
 
-            const response = await fetch('/analyze', {
-                method: 'POST',
-                body: formData
-            });
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
 
-            const data = await response.json();
-            document.getElementById('result').textContent = data.result || data.error;
+                const data = await response.json();
+                if (data.error) {
+                    resultDiv.textContent = `错误：${data.error}`;
+                } else {
+                    // 区分图片/视频结果展示
+                    if (data.type === 'image') {
+                        resultDiv.textContent = `【图片分析结果】\n${data.result}`;
+                    } else {
+                        resultDiv.textContent = `【视频分析结果】\n${data.result}`;
+                    }
+                }
+            } catch (e) {
+                resultDiv.textContent = `请求失败：${e.message}`;
+            }
         }
     </script>
 </body>
