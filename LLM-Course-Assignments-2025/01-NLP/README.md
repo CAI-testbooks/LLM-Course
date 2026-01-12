@@ -1,15 +1,17 @@
 ## 题目描述
 
 构建一个基于Qwen-2.5-7B-Instruct模型的中文医疗领域智能问答系统。选择一个医疗专业领域，收集医疗领域中华佗数据集，实现一个支持32K长上下文、多轮对话的RAG（Retrieval-Augmented Generation）问答系统，能够准确回答专业的医疗领域的相关问题。
+源代码的路径：https://github.com/Joshua00044444/LLM-Course/tree/feature/NLP-MedicalRAG/LLM-Course-Assignments-2025/01-NLP
+选择分支：feature/NLP-MedicalRAG，查看源代码
 
 ## 题目要求
 - **模型选择**
 (所有命令在/root/autodl-tmp下运行即可)
 首先先下载Qwen-2.5-7B-Instruct模型至本地，运行如下命令：python  model_download/download-qwen2.5-7b-instruct.py
 
-![模型下载1](/LLM-Course/LLM-Course-Assignments-2025/01-NLP/Medical-RAG/img/image1.png)
+![模型下载1](/LLM-Course-Assignments-2025/01-NLP/Medical-RAG/img/image1.png)
 
-![模型下载2](/LLM-Course/LLM-Course-Assignments-2025/01-NLP/Medical-RAG/img/image2.png)
+![模型下载2](/LLM-Course-Assignments-2025/01-NLP/Medical-RAG/img/image2.png)
 
 
 
