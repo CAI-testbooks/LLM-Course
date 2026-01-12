@@ -110,17 +110,7 @@ _USE_LAUNCH_THEME_CSS = not _USE_BLOCKS_THEME_CSS and (
     _GRADIO_MAJOR >= 6 if _GRADIO_MAJOR else _supports_kw(gr.Blocks.launch, "theme")
 )
 
-APP_THEME = gr.themes.Soft(
-    primary_hue="cyan",
-    secondary_hue="slate",
-    neutral_hue="slate",
-).set(
-    body_background_fill="var(--bg-main)",
-    block_background_fill="var(--bg-card)",
-    block_border_width="1px",
-    block_label_background_fill="var(--bg-panel)",
-    input_background_fill="var(--bg-input)",
-)
+APP_THEME = gr.themes.Soft()
 
 
 def _load_custom_css() -> str:
@@ -270,7 +260,16 @@ def clear_conversation():
 
 
 def search_documents(query: str, top_k: int = 5) -> str:
-    """搜索文档并返回Markdown格式"""
+    """
+    直接搜索相关文档
+    
+    Args:
+        query: 搜索查询
+        top_k: 返回数量
+        
+    Returns:
+        str: 格式化的搜索结果
+    """
     global rag_engine
     
     if not query.strip():
@@ -285,23 +284,21 @@ def search_documents(query: str, top_k: int = 5) -> str:
         docs = rag_engine.search_similar(query, k=top_k)
         
         if not docs:
-            return "### 📭 未找到相关文档\n请尝试更换关键词。"
+            return "未找到相关文档"
         
-        result = f"### 🔍 找到 {len(docs)} 个相关文档\n\n"
+        result = f"## 找到 {len(docs)} 个相关文档\n\n"
         
         for i, doc in enumerate(docs, 1):
-            source_icon = "📜" if "法" in doc.metadata.get('source', '') else "⚖️"
-            result += f"#### {source_icon} 文档 {i}\n"
-            result += f"- **来源**: {doc.metadata.get('source', '未知')}\n"
+            result += f"### 文档 {i}\n"
+            result += f"**来源**: {doc.metadata.get('source', '未知')}\n"
+            result += f"**类型**: {doc.metadata.get('type', '未知')}\n"
             
             if doc.metadata.get('accusation'):
-                result += f"- **罪名**: {doc.metadata['accusation']}\n"
+                result += f"**罪名**: {doc.metadata['accusation']}\n"
             if doc.metadata.get('article'):
-                result += f"- **条款**: {doc.metadata['article']}\n"
+                result += f"**条款**: {doc.metadata['article']}\n"
             
-            # 使用引用块显示内容
-            content = doc.page_content.replace('\n', '\n> ')
-            result += f"\n> {content}\n\n"
+            result += f"\n```\n{doc.page_content}\n```\n\n"
             result += "---\n\n"
         
         return result
@@ -322,17 +319,19 @@ EXAMPLE_QUESTIONS = [
 
 
 def create_app():
-    """创建Gradio应用 (优化版 v2.3)"""
+    """创建Gradio应用"""
     blocks_kwargs = {"title": APP_TITLE}
     if _USE_BLOCKS_THEME_CSS:
         blocks_kwargs["theme"] = APP_THEME
         blocks_kwargs["css"] = CUSTOM_CSS
     if _supports_kw(gr.Blocks, "fill_height"):
         blocks_kwargs["fill_height"] = True
+    if _supports_kw(gr.Blocks, "fill_width"):
+        blocks_kwargs["fill_width"] = True
 
     with gr.Blocks(**blocks_kwargs) as app:
-        # Header
-        with gr.Row(elem_id="app-header", elem_classes=["header-container"]):
+        # 顶部导航栏
+        with gr.Row(elem_id="app-header"):
             with gr.Column(scale=1):
                 gr.Markdown("""
                 <div class="logo">
@@ -341,137 +340,144 @@ def create_app():
                 </div>
                 <div class="subtitle">智能法律问答系统 · 刑法专业版</div>
                 """)
-        
-        # Main Container
-        with gr.Row(elem_id="app-shell", equal_height=False, elem_classes=["main-layout"]):
             
-            # Global Sidebar (Left) - for Actions
-            with gr.Column(scale=1, elem_id="sidebar", min_width=240):
-                gr.Markdown("### 🛠️ 工具箱", elem_classes=["sidebar-header"])
-                new_chat_btn = gr.Button("➕ 新对话", variant="primary", elem_id="new-chat")
+        with gr.Row(elem_id="app-shell", equal_height=True, elem_classes=["main-layout"]):
+            with gr.Column(scale=1, elem_id="sidebar", min_width=250):
+                # 侧边栏导航
+                mode = gr.Radio(
+                    choices=["智能问答", "文档搜索", "系统信息"],
+                    value="智能问答",
+                    label="功能导航",
+                    elem_id="nav-radio",
+                    show_label=False
+                )
+                
                 gr.Markdown("---")
+                
+                new_chat_btn = gr.Button("➕ 新对话", variant="primary", elem_id="new-chat")
                 show_sources = gr.Checkbox(value=True, label="显示引用侧栏")
                 
-                gr.Markdown("#### 💡 使用提示")
-                gr.Markdown("- Enter 发送\n- Shift+Enter 换行\n- 支持多轮对话")
-                
-                init_status = gr.Markdown("🟢 系统已就绪", elem_id="status-indicator")
+                gr.Markdown("#### 使用提示")
+                gr.Markdown("Enter 发送，Shift+Enter 换行。")
+                init_status = gr.Markdown("🟢 系统已就绪")
 
-            # Main Content Area (Tabs)
-            with gr.Column(scale=4, elem_id="main-content"):
-                with gr.Tabs(elem_id="main-tabs"):
-                    
-                    # Tab 1: Smart Q&A
-                    with gr.Tab("💬 智能问答", elem_id="tab-chat"):
-                        with gr.Row():
-                            # Chat Area
-                            with gr.Column(scale=3, elem_id="chat-col"):
-                                with gr.Group(elem_id="chat-group"):
-                                    chatbot_kwargs = {
-                                        "label": "对话历史",
-                                        "show_label": False,
-                                        "height": 650,
-                                        "elem_id": "chatbot",
-                                    }
-                                    if _supports_kw(gr.Chatbot, "bubble_full_width"):
-                                        chatbot_kwargs["bubble_full_width"] = False
-                                    if _CHATBOT_SUPPORTS_TYPE:
-                                        chatbot_kwargs["type"] = CHATBOT_FORMAT
-                                    if _supports_kw(gr.Chatbot, "show_copy_button"):
-                                        chatbot_kwargs["show_copy_button"] = True
-                                    if _supports_kw(gr.Chatbot, "avatar_images"):
-                                        chatbot_kwargs["avatar_images"] = (None, "⚖️")
-                                    
-                                    chatbot = gr.Chatbot(**chatbot_kwargs)
+            with gr.Column(scale=3, elem_id="main-chat-area"):
+                with gr.Group(visible=True, elem_id="chat-group") as chat_group:
+                    # 聊天面板（无嵌套Row）
+                    chatbot_kwargs = {
+                        "label": "对话历史",
+                        "show_label": False,
+                        "height": 600,
+                        "layout": "bubble",
+                        "elem_id": "chatbot",
+                    }
+                    if _CHATBOT_SUPPORTS_TYPE:
+                        chatbot_kwargs["type"] = CHATBOT_FORMAT
+                    if _supports_kw(gr.Chatbot, "show_copy_button"):
+                        chatbot_kwargs["show_copy_button"] = True
+                    chatbot = gr.Chatbot(**chatbot_kwargs)
 
-                                    with gr.Row(elem_id="composer", elem_classes=["composer-row"]):
-                                        msg_input = gr.Textbox(
-                                            label="输入您的法律问题",
-                                            placeholder="请在此输入具体的法律问题...",
-                                            lines=1,
-                                            max_lines=6,
-                                            scale=8,
-                                            show_label=False,
-                                            autofocus=True,
-                                            elem_id="chat-input"
-                                        )
-                                        send_btn = gr.Button("发送", variant="primary", scale=1, min_width=80)
+                    input_attrs = None
+                    if InputHTMLAttributes and _supports_kw(gr.Textbox, "html_attributes"):
+                        input_attrs = InputHTMLAttributes(
+                            enterkeyhint="send",
+                            autocorrect="off",
+                            spellcheck=False
+                        )
 
-                                    gr.Markdown("### 🔍 热门问题")
-                                    gr.Examples(
-                                        examples=[[q] for q in EXAMPLE_QUESTIONS],
-                                        inputs=msg_input,
-                                        label="",
-                                        elem_id="example-questions"
-                                    )
+                    with gr.Row(elem_id="composer", elem_classes=["composer-row"]):
+                        msg_input = gr.Textbox(
+                            label="输入您的法律问题",
+                            placeholder="请输入法律问题...",
+                            lines=1,
+                            max_lines=6,
+                            scale=8,
+                            show_label=False,
+                            autofocus=True,
+                            elem_id="chat-input",
+                            html_attributes=input_attrs
+                        )
+                        send_btn = gr.Button("发送", variant="primary", scale=1, min_width=80)
 
-                            # Citation/Info Sidebar (Right) - Collapsible via checkbox
-                            with gr.Column(scale=1, elem_id="side-panel", min_width=280, visible=True) as side_panel:
-                                with gr.Group():
-                                    gr.Markdown("### 📊 置信度", elem_classes=["panel-header"])
-                                    confidence_display = gr.Markdown(
-                                        value="waiting...",
-                                        elem_classes=["panel-section"]
-                                    )
+                    gr.Markdown("### 🔍 示例参考")
+                    gr.Examples(
+                        examples=[[q] for q in EXAMPLE_QUESTIONS],
+                        inputs=msg_input,
+                        label="",
+                        elem_id="example-questions"
+                    )
 
-                                with gr.Group():
-                                    gr.Markdown("### 📚 引用来源", elem_classes=["panel-header"])
-                                    citations_display = gr.Markdown(
-                                        value="<div style='color:var(--text-light); text-align:center; padding:20px'>提问后将显示法律依据</div>",
-                                        elem_classes=["citation-box"]
-                                    )
+                with gr.Group(visible=False, elem_id="search-group") as search_group:
+                    gr.Markdown("### 文档搜索")
+                    gr.Markdown("在向量库中直接检索相关法条与案例，支持关键词搜索。")
+                    with gr.Row():
+                        search_input = gr.Textbox(
+                            label="搜索内容",
+                            placeholder="例如：正当防卫、刑法第232条...",
+                            scale=3
+                        )
+                        search_k = gr.Slider(
+                            minimum=1,
+                            maximum=10,
+                            value=5,
+                            step=1,
+                            label="返回数量",
+                            scale=1
+                        )
+                        search_btn = gr.Button("搜索", variant="primary", scale=1)
 
-                    # Tab 2: Document Search
-                    with gr.Tab("🔎 文档搜索", elem_id="tab-search"):
-                        with gr.Group(elem_id="search-group"):
-                            gr.Markdown("### 📚 法律法规检索")
-                            gr.Markdown("直接检索向量数据库中的法条与案例。")
-                            with gr.Row():
-                                search_input = gr.Textbox(
-                                    label="搜索关键词",
-                                    placeholder="例如：故意伤害罪、正当防卫...",
-                                    scale=4
-                                )
-                                search_k = gr.Slider(
-                                    minimum=1, maximum=20, value=5, step=1,
-                                    label="返回数量", scale=1
-                                )
-                                search_btn = gr.Button("🔍 搜索", variant="primary", scale=1)
+                    search_results = gr.Markdown(
+                        label="搜索结果",
+                        value="搜索结果将在这里显示"
+                    )
 
-                            search_results = gr.Markdown(
-                                value="<br/>请输入关键词开始搜索...",
-                                elem_id="search-results"
-                            )
+                with gr.Group(visible=False, elem_id="info-group") as info_group:
+                    gr.Markdown("""
+                    ### Juris-RAG 系统信息
 
-                    # Tab 3: System Info
-                    with gr.Tab("ℹ️ 系统信息", elem_id="tab-info"):
-                        with gr.Group(elem_id="info-group"):
-                            gr.Markdown("""
-                            # ⚖️ Juris-RAG 法律智能问答系统
+                    #### 模型配置
+                    - **知识库**: 刑法法条 + CAIL2018 刑事案例
+                    - **向量模型**: BAAI/bge-m3 (1024维)
+                    - **大模型**: Qwen2.5-7B-Instruct
+                    - **检索策略**: 相似度检索 + 阈值过滤
+                    - **上下文**: 多轮对话 + 引用来源
+                    - **置信度**: 低置信度提示与拒答
 
-                            ## 核心架构
-                            本系统基于 **Retrieval-Augmented Generation (RAG)** 技术，专为中国刑法领域设计。
+                    #### 技术栈
+                    - **框架**: LangChain + Gradio
+                    - **向量库**: ChromaDB
+                    - **Embedding**: BAAI/bge-m3
+                    - **LLM**: Qwen/Qwen2.5-7B-Instruct
+                    - **API**: SiliconFlow
+                    """)
 
-                            ### 🚀 技术亮点
-                            - **混合检索**: 结合关键词与语义向量检索，确保法条查找的准确性。
-                            - **两阶段重排序**: 引入 LLM Reranker 对检索结果进行精细化排序。
-                            - **幻觉检测**: 实时校验生成内容与引用法条的一致性，低置信度自动拒答。
+            with gr.Column(scale=1, elem_id="side-panel", min_width=280) as side_panel:
+                with gr.Group():
+                    gr.Markdown("### 📊 置信度", elem_classes=["panel-header"])
+                    confidence_display = gr.Markdown(
+                        value="等待提问...",
+                        elem_classes=["panel-section"]
+                    )
 
-                            ### 🛠️ 模块配置
-                            | 模块 | 详情 |
-                            |Data | 刑法法条 + CAIL2018 刑事案例库 |
-                            |Embedding | BAAI/bge-m3 (1024 dim) |
-                            |Vector DB | ChromaDB |
-                            |LLM | Qwen2.5-7B-Instruct (SiliconFlow API) |
-                            |Frontend | Gradio 5 + Custom CSS |
-                            """)
+                with gr.Group():
+                    gr.Markdown("### 📚 引用来源", elem_classes=["panel-header"])
+                    citations_display = gr.Markdown(
+                        value="<div style='color:var(--text-light); text-align:center; padding:20px'>提问后将显示法律依据</div>",
+                        elem_classes=["citation-box"]
+                    )
 
-        # Event Wiring
         def on_submit(message, history, citations_value, confidence_value):
             if _is_duplicate_submit(message, history):
                 return history, "", citations_value, confidence_value
             answer, citations, confidence, new_history = chat_response(message, history)
             return new_history, "", citations, confidence
+
+        def switch_mode(selection):
+            return (
+                gr.update(visible=selection == "智能问答"),
+                gr.update(visible=selection == "文档搜索"),
+                gr.update(visible=selection == "系统信息"),
+            )
 
         msg_input.submit(
             fn=on_submit,
@@ -479,6 +485,7 @@ def create_app():
             outputs=[chatbot, msg_input, citations_display, confidence_display]
         )
         
+        # 绑定发送按钮
         send_btn.click(
             fn=on_submit,
             inputs=[msg_input, chatbot, citations_display, confidence_display],
@@ -502,29 +509,44 @@ def create_app():
             outputs=side_panel
         )
 
-        # Init Load
+        mode.change(
+            fn=switch_mode,
+            inputs=mode,
+            outputs=[chat_group, search_group, info_group]
+        )
+
         def on_load():
             success, msg = initialize_engine()
             return msg
 
-        app.load(fn=on_load, outputs=init_status)
+        app.load(
+            fn=on_load,
+            outputs=init_status
+        )
 
     return app
 
 
+# 主入口
 if __name__ == "__main__":
-    print("正在启动 Juris-RAG Web应用 (v2.3 UI Optimized)...")
+    print("正在启动 Juris-RAG Web应用...")
     print("=" * 50)
     
+    # 检查环境变量
     if not os.getenv("SILICONFLOW_API_KEY"):
         print("警告: 未检测到 SILICONFLOW_API_KEY 环境变量")
+        print("   请设置: set SILICONFLOW_API_KEY=your_key (Windows)")
+        print("   或: export SILICONFLOW_API_KEY=your_key (Linux/Mac)")
+        print("=" * 50)
     
+    # 创建并启动应用
     app = create_app()
     
+    # 启动服务（可选公网链接，默认关闭，设置 GRADIO_SHARE=true 开启）
     share_enabled = os.getenv("GRADIO_SHARE", "false").lower() == "true"
+    # 默认使用 127.0.0.1 便于直接访问，如需局域网/公网请设置 GRADIO_SERVER_NAME=0.0.0.0
     server_name = os.getenv("GRADIO_SERVER_NAME", "127.0.0.1")
     server_port = int(os.getenv("GRADIO_SERVER_PORT", "7860"))
-    
     launch_kwargs = {
         "server_name": server_name,
         "server_port": server_port,
@@ -532,11 +554,10 @@ if __name__ == "__main__":
         "show_error": True,
         "favicon_path": None,
     }
-    
     print(f"✅ 本地访问: http://{server_name}:{server_port}")
-    
+    if share_enabled:
+        print("🌐 正在尝试生成公网链接 (GRADIO_SHARE=true)...")
     if _USE_LAUNCH_THEME_CSS:
         launch_kwargs["theme"] = APP_THEME
         launch_kwargs["css"] = CUSTOM_CSS
-        
     app.launch(**launch_kwargs)

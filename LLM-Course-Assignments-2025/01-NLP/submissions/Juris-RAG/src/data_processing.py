@@ -18,7 +18,13 @@ except ImportError:  # fallback for older langchain versions
         from langchain_core.documents import Document
     except ImportError:
         from langchain_classic.schema import Document
-from langchain_community.vectorstores import Chroma
+
+# 优先使用新版 langchain-chroma
+try:
+    from langchain_chroma import Chroma  # type: ignore
+except ImportError:  # pragma: no cover - 兼容旧环境
+    from langchain_community.vectorstores import Chroma
+
 try:
     from langchain_openai import OpenAIEmbeddings
 except ImportError:  # fallback for older installs
@@ -640,12 +646,17 @@ class LegalDataProcessor:
         # 确保目录存在
         os.makedirs(db_path, exist_ok=True)
         
-        # 删除旧数据库（如果存在）
-        if os.path.exists(db_path) and os.listdir(db_path):
-            import shutil
-            print(f"🗑️ 清理旧的向量数据库 {db_path}...")
-            shutil.rmtree(db_path)
-            os.makedirs(db_path)
+        # 删除旧数据库（如果存在），避免版本冲突
+        if os.path.exists(db_path):
+            try:
+                import shutil
+                print(f"🗑️ 清理旧的向量数据库 {db_path}...")
+                shutil.rmtree(db_path)
+                time.sleep(0.5)  # 等待文件系统完成删除
+            except Exception as e:
+                print(f"⚠️ 清理旧数据库失败: {e}")
+        
+        os.makedirs(db_path, exist_ok=True)
         
         vectorstore = None
         

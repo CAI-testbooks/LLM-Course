@@ -55,7 +55,7 @@ MAX_HISTORY_TURNS = 15  # 保留的历史对话轮数
 
 # ==================== LLM生成参数 ====================
 LLM_TEMPERATURE = 0.1  # 法律场景需要严谨，温度设低
-LLM_MAX_TOKENS = 2048  # 最大生成长度
+LLM_MAX_TOKENS = 1024  # 最大生成长度（优化：从2048改为1024，采用更精炼的回答格式）
 LLM_TOP_P = 0.9
 
 # ==================== 置信度与拒答配置 ====================
@@ -70,6 +70,37 @@ UNCERTAIN_RESPONSE = """抱歉，根据现有法律数据库，我无法准确�
 3. 这可能是一个需要专业律师判断的复杂法律问题
 
 建议：请咨询专业律师获取准确的法律意见。"""
+
+# ==================== Reranker/判别器配置 ====================
+ENABLE_RERANKER = True  # 是否启用LLM重排序
+RERANKER_MODEL = LLM_MODEL  # 使用同一模型进行重排序
+RERANKER_TOP_K = 3  # 重排序后保留的文档数量（优化：从5改为3）
+RERANKER_THRESHOLD = 0.4  # 相关性阈值，低于此值视为不相关
+ENABLE_HALLUCINATION_CHECK = True  # 是否启用幻觉检测（优化：改为选择性启用）
+
+# ==================== 混合幻觉检测策略（方案D）====================
+# 根据问题类型采用不同的检测方法，平衡速度和准确性
+SELECTIVE_HALLUCINATION_CHECK = True  # 启用选择性检测
+# 高风险问题（特殊情况、超范围）：使用LLM深度检测
+HALLUCINATION_CHECK_HIGH_RISK = True  # 对高风险问题启用LLM检测
+HALLUCINATION_CHECK_HIGH_RISK_USE_LLM = True  # 高风险问题使用LLM检测（准确但慢）
+# 正常问题（常规刑法）：跳过检测以加快响应
+HALLUCINATION_CHECK_NORMAL = False  # 对正常问题禁用检测：以加快响应
+HALLUCINATION_CHECK_TIMEOUT = 5  # 幻觉检测超时（秒）
+
+# ==================== 检索缓存配置 ====================
+ENABLE_CACHE = True  # 是否启用检索缓存
+CACHE_MAX_SIZE = 200  # LRU缓存最大条目数（优化：从100改为200）
+CACHE_TTL_SECONDS = 7200  # 缓存过期时间（秒）（优化：从3600改为7200，2小时）
+
+# ==================== 并行处理配置 ====================
+ENABLE_PARALLEL_RETRIEVAL = True  # 是否启用并行检索（短期优化）
+MAX_PARALLEL_WORKERS = 4  # 最大并行工作线程数
+PARALLEL_RETRIEVAL_TIMEOUT = 10  # 并行检索超时（秒）
+
+# ==================== 流式生成配置 ====================
+ENABLE_STREAM_GENERATION = True  # 是否启用流式生成
+STREAM_CHUNK_SIZE = 50  # 流式输出的token块大小
 
 # ==================== 数据处理配置 ====================
 # CAIL数据集加载限制（可通过环境变量覆盖）
