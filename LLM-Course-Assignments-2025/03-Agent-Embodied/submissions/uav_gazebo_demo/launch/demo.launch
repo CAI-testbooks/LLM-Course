@@ -1,0 +1,37 @@
+<launch>
+  <!-- 让 Gazebo 能找到本包 models -->
+  <env name="GAZEBO_MODEL_PATH" value="$(find uav_gazebo_demo)/models:$(optenv GAZEBO_MODEL_PATH)"/>
+
+  <!-- 启动 Gazebo world -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <arg name="world_name" value="$(find uav_gazebo_demo)/worlds/demo.world"/>
+    <arg name="paused" value="false"/>
+    <arg name="use_sim_time" value="true"/>
+  </include>
+
+  <!-- 生成无人机与包裹 -->
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_uav" output="screen"
+        args="-sdf -file $(find uav_gazebo_demo)/models/iris_visual_only/model.sdf -model uav_dummy -x 0 -y 0 -z 0.2"/>
+
+  <node pkg="gazebo_ros" type="spawn_model" name="spawn_payload" output="screen"
+        args="-sdf -file $(find uav_gazebo_demo)/models/payload_box/model.sdf -model payload_box -x 0 -y 0 -z 0.0"/>
+
+  <!-- 控制 / 包裹挂载投放 / 执行器 -->
+  <node pkg="uav_gazebo_demo" type="uav_control.py" name="uav_control" output="screen">
+    <param name="step" value="0.05"/>   <!-- 1 m/s at 20Hz -->
+    <param name="tol"  value="0.08"/>
+  </node>
+
+  <node pkg="uav_gazebo_demo" type="payload_drop.py" name="payload_drop" output="screen"/>
+  <!-- executor 先不在 launch 自动运行，改为手动播放
+  <node pkg="uav_gazebo_demo" type="executor_demo.py" name="executor_demo" output="screen">
+    <param name="z_cruise" value="10.0"/>
+    <param name="z_drop" value="3.0"/>
+    <rosparam param="drop_xy">[10.0, -3.0]</rosparam>
+    <rosparam param="goal_xy">[20.0, 5.0]</rosparam>
+    <param name="trace_dir" value="$(find uav_gazebo_demo)/results/traces"/>
+  </node>
+  -->
+
+</launch>
+

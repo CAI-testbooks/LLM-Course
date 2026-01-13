@@ -1,0 +1,10 @@
+{"t": 7.213, "step": 1, "action": {"tool": "HOVER", "args": {"t": 5.0, "note": "wait at start"}}, "result": {"ok": true, "reason": ""}}
+{"t": 8.315, "step": 2, "action": {"tool": "TAKEOFF", "args": {"x": 0.0, "y": 0.0, "z": 1.0}}, "result": {"ok": true, "reason": ""}}
+{"t": 13.616, "step": 3, "action": {"tool": "MOVE_TO", "args": {"x": 5.0, "y": 0.0, "z": 1.0, "expect_s": 5.0}}, "result": {"ok": true, "reason": ""}}
+{"t": 14.016, "step": 4, "action": {"tool": "DESCEND", "args": {"x": 5.0, "y": 0.0, "z": 0.5}}, "result": {"ok": true, "reason": ""}}
+{"t": 17.016, "step": 5, "action": {"tool": "HOVER", "args": {"t": 3.0, "z": 0.5}}, "result": {"ok": true, "reason": ""}}
+{"t": 17.019, "step": 6, "action": {"tool": "DROP_PAYLOAD", "args": {}}, "result": {"ok": true, "reason": "Payload released (stop following UAV)."}}
+{"t": 17.72, "step": 7, "action": {"tool": "ASCEND", "args": {"x": 5.0, "y": 0.0, "z": 1.0}}, "result": {"ok": true, "reason": ""}}
+{"t": 23.021, "step": 8, "action": {"tool": "MOVE_TO", "args": {"x": 10.0, "y": 0.0, "z": 1.0, "expect_s": 5.0}}, "result": {"ok": true, "reason": ""}}
+{"t": 23.634, "step": 9, "action": {"tool": "LAND", "args": {"x": 10.0, "y": 0.0, "z": 0.2}}, "result": {"ok": true, "reason": ""}}
+{"terminal": true, "success": true, "t": 23.635}

@@ -1,0 +1,1 @@
+{"t": 3.7359999999999998, "step": 1, "action": {"tool": "TAKEOFF", "args": {"z": 10.0}}, "result": {"ok": true, "reason": ""}}
