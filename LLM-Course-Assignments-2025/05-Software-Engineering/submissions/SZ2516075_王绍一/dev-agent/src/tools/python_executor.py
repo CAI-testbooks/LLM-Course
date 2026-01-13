@@ -3,6 +3,8 @@ import subprocess
 import tempfile
 import os
 import time
+from typing import Dict
+
 
 class PythonExecutor:
     """安全执行Python代码"""
