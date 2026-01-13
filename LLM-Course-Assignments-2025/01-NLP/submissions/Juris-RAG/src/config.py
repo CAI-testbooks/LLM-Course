@@ -25,11 +25,11 @@ SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
 EMBEDDING_MODEL = "BAAI/bge-m3"
 EMBEDDING_DIMENSION = 1024  # BGE-M3的向量维度
 
-# LLM模型 - 使用Qwen3-8B，支持128K长上下文，免费
-LLM_MODEL = "Qwen/Qwen3-8B"
+# LLM模型 - 使用Qwen2.5-7B-Instruct，支持128K长上下文
+LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 # 备选模型
-# LLM_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 # LLM_MODEL = "Qwen/Qwen2.5-14B-Instruct"
+# LLM_MODEL = "Qwen/Qwen3-8B"  # 注意：此模型可能不可用
 
 # ==================== RAG参数配置 ====================
 # 文本分块参数
