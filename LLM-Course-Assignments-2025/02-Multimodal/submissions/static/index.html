@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>军事场景识别Demo（大模型优化版）</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: "Microsoft YaHei", Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; margin-bottom: 20px; text-align: center; }
+        .upload-area { border: 2px dashed #3498db; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 20px; }
+        .upload-btn { background: #3498db; color: white; padding: 10px 30px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 10px 0; }
+        .upload-btn:hover { background: #2980b9; }
+        .upload-area input { display: none; }
+        /* 选中文件提示样式 */
+        .file-tip { margin: 10px 0; padding: 10px; background: #e8f4fd; border-radius: 4px; color: #2c3e50; display: none; }
+        .file-tip.show { display: block; }
+        .file-name { color: #3498db; font-weight: bold; }
+        .progress-area { margin: 20px 0; }
+        .progress-bar { height: 20px; background: #eee; border-radius: 10px; overflow: hidden; margin: 10px 0; }
+        .progress-fill { height: 100%; background: #3498db; width: 0%; transition: width 0.5s; }
+        .result-area { margin: 20px 0; }
+        .result-box { background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #dee2e6; white-space: pre-wrap; line-height: 1.6; }
+        .preview-area { margin: 20px 0; text-align: center; }
+        .preview-area img { max-width: 800px; max-height: 500px; border-radius: 8px; }
+        .export-area { margin: 10px 0; }
+        .export-btn { background: #2ecc71; color: white; padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+        .export-btn:hover { background: #27ae60; }
+        .hidden { display: none; }
+        .loading { color: #3498db; font-style: italic; }
+        .error { color: #e74c3c; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>军事场景识别Demo（大模型优化版）</h1>
+
+        <!-- 上传区域 -->
+        <div class="upload-area">
+            <h3>选择图片/视频文件（支持jpg/png/mp4/avi）</h3>
+            <label for="mediaInput" class="upload-btn">选择文件</label>
+            <input type="file" id="mediaInput" accept="image/*,video/*">
+            <button class="upload-btn" onclick="uploadFile()">上传并分析</button>
+            <!-- 选中文件提示框 -->
+            <div class="file-tip" id="fileTip">
+                已选中文件：<span class="file-name" id="selectedFileName"></span>
+            </div>
+        </div>
+
+        <!-- 进度区域 -->
+        <div class="progress-area hidden" id="progressArea">
+            <h3>分析进度</h3>
+            <div id="progressText" class="loading">等待开始...</div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+        </div>
+
+        <!-- 结果预览区域 -->
+        <div class="result-area hidden" id="resultArea">
+            <h3>分析结果</h3>
+            <div class="preview-area" id="previewArea"></div>
+            <div class="export-area">
+                <button class="export-btn" onclick="exportResult('txt')">导出结果（TXT）</button>
+                <button class="export-btn" onclick="exportResult('image')">导出标注图片（PNG）</button>
+            </div>
+            <div class="result-box" id="resultBox"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentFileId = "";  // 当前分析的文件ID
+        let progressInterval = null;  // 进度轮询定时器
+        // 获取新增的提示元素
+        const fileTip = document.getElementById("fileTip");
+        const selectedFileName = document.getElementById("selectedFileName");
+        const mediaInput = document.getElementById("mediaInput");
+
+        // 监听文件选择事件，显示提示
+        mediaInput.addEventListener("change", function() {
+            const file = this.files[0];
+            if (file) {
+                // 1. 页面内显示选中的文件名
+                selectedFileName.textContent = file.name;
+                fileTip.classList.add("show");
+                // 2. 弹窗提示
+                alert(`已成功选中文件：${file.name}\n文件大小：${formatFileSize(file.size)}`);
+            } else {
+                // 清空提示
+                fileTip.classList.remove("show");
+                selectedFileName.textContent = "";
+            }
+        });
+
+        // 格式化文件大小（字节转KB/MB）
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + " B";
+            else if (bytes < 1048576) return (bytes / 1024).toFixed(2) + " KB";
+            else return (bytes / 1048576).toFixed(2) + " MB";
+        }
+
+        // 上传文件
+        async function uploadFile() {
+            const file = mediaInput.files[0];
+            if (!file) {
+                alert("请先选择文件！");
+                return;
+            }
+
+            // 重置状态
+            resetState();
+            // 显示进度区域
+            document.getElementById("progressArea").classList.remove("hidden");
+
+            // 构造FormData
+            const formData = new FormData();
+            formData.append("file", file);
+
+            try {
+                // 上传文件获取file_id
+                const res = await fetch("/upload", {
+                    method: "POST",
+                    body: formData
+                });
+                const data = await res.json();
+                if (data.code !== 200) {
+                    throw new Error(data.msg || "上传失败");
+                }
+                currentFileId = data.file_id;
+
+                // 开始轮询进度
+                startProgressPolling();
+            } catch (e) {
+                document.getElementById("progressText").className = "error";
+                document.getElementById("progressText").textContent = `上传失败：${e.message}`;
+            }
+        }
+
+        // 轮询进度
+        function startProgressPolling() {
+            // 停止之前的定时器
+            if (progressInterval) clearInterval(progressInterval);
+
+            progressInterval = setInterval(async () => {
+                if (!currentFileId) return;
+
+                try {
+                    const res = await fetch(`/progress/${currentFileId}`);
+                    const progress = await res.json();
+
+                    // 更新进度
+                    document.getElementById("progressText").textContent = progress.step;
+                    document.getElementById("progressFill").style.width = `${progress.progress}%`;
+
+                    // 处理完成/失败
+                    if (progress.status === "success") {
+                        clearInterval(progressInterval);
+                        // 获取并显示结果
+                        await showResult();
+                    } else if (progress.status === "failed") {
+                        clearInterval(progressInterval);
+                        document.getElementById("progressText").className = "error";
+                        document.getElementById("progressText").textContent = `失败：${progress.error || "未知错误"}`;
+                    }
+                } catch (e) {
+                    console.error("轮询进度失败：", e);
+                }
+            }, 500);
+        }
+
+        // 显示分析结果
+        async function showResult() {
+            if (!currentFileId) return;
+
+            try {
+                const res = await fetch(`/result/${currentFileId}`);
+                const data = await res.json();
+                if (data.code !== 200) {
+                    throw new Error(data.msg || "获取结果失败");
+                }
+
+                // 显示结果区域
+                document.getElementById("resultArea").classList.remove("hidden");
+                // 显示结果文本
+                document.getElementById("resultBox").textContent = data.result_text;
+                // 显示标注图片
+                if (data.annotated_img) {
+                    const img = document.createElement("img");
+                    img.src = `data:image/png;base64,${data.annotated_img}`;
+                    img.alt = "标注预览图";
+                    document.getElementById("previewArea").innerHTML = "";
+                    document.getElementById("previewArea").appendChild(img);
+                }
+            } catch (e) {
+                document.getElementById("progressText").className = "error";
+                document.getElementById("progressText").textContent = `获取结果失败：${e.message}`;
+            }
+        }
+
+        // 导出结果
+        async function exportResult(format) {
+            if (!currentFileId) {
+                alert("暂无分析结果可导出！");
+                return;
+            }
+
+            try {
+                const res = await fetch(`/export/${currentFileId}?format=${format}`);
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.msg || "导出失败");
+                }
+
+                // 下载文件
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${currentFileId}_result.${format}`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+            } catch (e) {
+                alert(`导出失败：${e.message}`);
+            }
+        }
+
+        // 重置状态
+        function resetState() {
+            currentFileId = "";
+            if (progressInterval) clearInterval(progressInterval);
+            document.getElementById("progressText").className = "loading";
+            document.getElementById("progressText").textContent = "等待开始...";
+            document.getElementById("progressFill").style.width = "0%";
+            document.getElementById("resultArea").classList.add("hidden");
+            document.getElementById("previewArea").innerHTML = "";
+            document.getElementById("resultBox").textContent = "";
+        }
+    </script>
+</body>
+</html>
