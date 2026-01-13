@@ -260,3 +260,188 @@ def should_refuse(retrieval_results: List[Any], threshold: float = 0.5) -> bool:
             top_score = max(top_score, result.get("score", 0.0))
     
     return top_score < threshold
+
+
+# ==================== 查询重写提示词 ====================
+
+PROMPTS["query_rewrite"] = """你是一个专业的医学查询优化专家。你的任务是将用户的口语化查询重写为更专业、更适合检索的形式。
+
+## 重写规则
+
+1. **使用专业术语**：将口语化表达转换为医学专业术语
+2. **保持核心意图**：不要改变查询的核心意图和范围
+3. **去除冗余**：去除口语词、语气词等冗余信息
+4. **补充关键词**：适当补充相关的医学关键词
+5. **简洁明确**：重写后的查询应简洁、明确
+
+## 示例
+
+输入：头疼怎么办啊
+输出：头痛的治疗方法和缓解措施
+
+输入：吃了感冒药能喝酒吗
+输出：感冒药与酒精的相互作用及禁忌
+
+输入：最近老是睡不好觉
+输出：失眠的原因及改善方法
+
+输入：肚子疼拉肚子是怎么回事
+输出：腹痛腹泻的常见病因
+
+## 当前任务
+
+请将以下查询重写为更专业的检索查询，只输出重写后的查询，不要输出任何解释：
+
+{query}"""
+
+
+PROMPTS["multi_query"] = """你是一个专业的医学查询扩展专家。你的任务是将用户的查询扩展为多个不同角度的检索查询，以提高检索召回率。
+
+## 扩展规则
+
+1. **多角度覆盖**：从症状、病因、治疗、预防等不同角度生成查询
+2. **同义词替换**：使用医学同义词生成变体
+3. **具体化**：将模糊的查询具体化
+4. **保持相关性**：所有生成的查询都应与原始意图相关
+
+## 输出格式
+
+请生成3个不同角度的查询，每行一个，不要编号，不要解释：
+
+## 示例
+
+输入：高血压
+输出：
+高血压的诊断标准和症状表现
+高血压的病因和危险因素
+高血压的治疗方法和生活方式调整
+
+## 当前任务
+
+请为以下查询生成3个不同角度的检索查询：
+
+{query}"""
+
+
+PROMPTS["context_aware_rewrite"] = """你是一个专业的对话理解专家。你的任务是结合对话历史，将用户的当前查询补全为完整、独立的查询。
+
+## 补全规则
+
+1. **代词还原**：将"它"、"这个"、"那个"等代词还原为具体指代
+2. **省略补全**：补全用户省略的主语、宾语等成分
+3. **上下文融合**：结合历史对话理解当前查询的完整含义
+4. **保持独立**：补全后的查询应能独立理解，无需参考历史
+
+## 对话历史
+
+{history}
+
+## 当前查询
+
+{query}
+
+## 任务
+
+请将当前查询补全为完整的独立查询，只输出补全后的查询，不要输出任何解释："""
+
+
+# ==================== HyDE 假设文档嵌入 ====================
+
+PROMPTS["hyde"] = """你是一个专业的医学知识库助手。请根据用户的问题，生成一段假设性的知识库文档内容，该内容应该是能够完美回答用户问题的理想文档。
+
+## 生成规则
+
+1. **专业准确**：使用准确的医学术语和专业表达
+2. **信息丰富**：包含与问题直接相关的详细信息
+3. **结构清晰**：内容组织有条理，易于理解
+4. **适度长度**：生成100-200字的内容，不要太短或太长
+5. **文档风格**：使用医学文档或百科的写作风格，不要使用对话风格
+
+## 示例
+
+问题：高血压患者能吃什么降压药？
+假设文档：
+高血压的药物治疗主要包括以下几类：1）钙通道阻滞剂（如氨氯地平、硝苯地平），通过扩张血管降低血压；2）血管紧张素转换酶抑制剂（ACEI，如依那普利、卡托普利），适用于伴有心衰或糖尿病的患者；3）血管紧张素II受体拮抗剂（ARB，如缬沙坦、氯沙坦），副作用较少；4）利尿剂（如氢氯噻嗪），常作为联合用药。选择降压药需根据患者的具体情况，如年龄、合并症、药物耐受性等综合考虑，建议在医生指导下用药。
+
+## 当前任务
+
+请根据以下问题生成一段假设性的知识库文档内容，只输出文档内容，不要输出任何解释或前缀：
+
+{query}"""
+
+
+PROMPTS["hyde_short"] = """你是医学知识库助手。请根据问题生成一段50-100字的假设性文档内容，使用专业医学术语，文档风格，不要对话风格。只输出内容：
+
+{query}"""
+
+
+# ==================== 查询重写辅助函数 ====================
+
+def build_rewrite_prompt(query: str, mode: str = "single", history: str = None) -> str:
+    """
+    构建查询重写提示词
+    
+    Args:
+        query: 原始查询
+        mode: 重写模式 (single/multi/context/hyde/hyde_short)
+        history: 对话历史（context模式需要）
+    
+    Returns:
+        完整的提示词
+    """
+    if mode == "single":
+        return PROMPTS["query_rewrite"].format(query=query)
+    elif mode == "multi":
+        return PROMPTS["multi_query"].format(query=query)
+    elif mode == "context":
+        if not history:
+            history = "（无历史对话）"
+        return PROMPTS["context_aware_rewrite"].format(query=query, history=history)
+    elif mode == "hyde":
+        return PROMPTS["hyde"].format(query=query)
+    elif mode == "hyde_short":
+        return PROMPTS["hyde_short"].format(query=query)
+    else:
+        raise ValueError(f"Unknown rewrite mode: {mode}")
+
+
+def analyze_query(query: str) -> Dict[str, Any]:
+    """
+    分析查询特征，推荐重写模式
+    
+    Args:
+        query: 原始查询
+    
+    Returns:
+        分析结果字典，包含特征和推荐模式
+    """
+    import re
+    
+    features = {
+        "length": len(query),
+        "has_pronouns": bool(re.search(r'[它这那]个?|他们?|她们?', query)),
+        "is_colloquial": bool(re.search(r'啊|吧|呢|吗|哦|嘛|呀|嗯', query)),
+        "has_question_words": bool(re.search(r'怎么|如何|为什么|什么|哪些?|多少', query)),
+        "is_short": len(query) < 10,
+        "is_long": len(query) > 50,
+    }
+    
+    # 推荐模式
+    if features["has_pronouns"]:
+        recommended_mode = "context"
+        reason = "检测到代词，建议使用上下文感知模式"
+    elif features["is_colloquial"] or features["is_short"]:
+        recommended_mode = "single"
+        reason = "口语化或较短的查询，建议使用单查询重写"
+    elif features["is_long"] or features["has_question_words"]:
+        recommended_mode = "multi"
+        reason = "较长或包含问句，建议使用多查询扩展"
+    else:
+        recommended_mode = "single"
+        reason = "默认使用单查询重写"
+    
+    return {
+        "features": features,
+        "recommended_mode": recommended_mode,
+        "reason": reason
+    }

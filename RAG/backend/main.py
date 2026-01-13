@@ -20,12 +20,14 @@ import uvicorn
 # 添加项目根目录到路径，以便导入 rag 模块
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(Path(__file__).parent))  # 添加当前目录
 
-from rag import (
-    RAG,
+from rag import RAG
+from rag.prompts import (
     get_prompt,
     build_rag_prompt,
     should_refuse,
+    analyze_query as do_analyze_query
 )
 
 
@@ -49,6 +51,17 @@ class Config:
     TOP_K: int = int(os.getenv("TOP_K", "5"))
     RELEVANCE_THRESHOLD: float = float(os.getenv("RELEVANCE_THRESHOLD", "0.45"))
     MAX_HISTORY: int = int(os.getenv("MAX_HISTORY", "10"))
+    
+    # 查询重写配置
+    ENABLE_REWRITE: bool = os.getenv("ENABLE_REWRITE", "false").lower() == "true"
+    REWRITE_MODE: str = os.getenv("REWRITE_MODE", "single")  # single/multi/context/auto/hyde
+    ENABLE_CACHE: bool = os.getenv("ENABLE_CACHE", "true").lower() == "true"
+    CACHE_SIZE: int = int(os.getenv("CACHE_SIZE", "1000"))
+    
+    # 重排序配置
+    ENABLE_RERANK: bool = os.getenv("ENABLE_RERANK", "false").lower() == "true"
+    RERANK_MODEL: str = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-base")
+    RERANK_TOP_K: int = int(os.getenv("RERANK_TOP_K", "0")) or None  # 0 表示使用 TOP_K
 
 
 config = Config()
@@ -67,6 +80,11 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="用户消息")
     conversation_id: Optional[str] = Field(None, description="会话ID")
     top_k: Optional[int] = Field(None, description="检索数量")
+    # 查询重写参数
+    enable_rewrite: Optional[bool] = Field(None, description="是否启用查询重写")
+    rewrite_mode: Optional[str] = Field(None, description="重写模式: single/multi/context/auto/hyde")
+    # 重排序参数
+    enable_rerank: Optional[bool] = Field(None, description="是否启用重排序")
 
 
 class Source(BaseModel):
@@ -197,6 +215,9 @@ class RAGService:
             print(f"  Model: {config.MODEL_NAME}")
             print(f"  Embedding: {config.EMBEDDING_MODEL}")
             print(f"  DB Dir: {config.DB_DIR}")
+            print(f"  Query Rewrite: {config.ENABLE_REWRITE} ({config.REWRITE_MODE})")
+            print(f"  Cache: {config.ENABLE_CACHE} (size: {config.CACHE_SIZE})")
+            print(f"  Rerank: {config.ENABLE_RERANK} ({config.RERANK_MODEL})")
             
             # 确保目录存在
             Path(config.DB_DIR).mkdir(parents=True, exist_ok=True)
@@ -208,16 +229,38 @@ class RAGService:
                 provider=config.LLM_PROVIDER or None,
                 embedding_model=config.EMBEDDING_MODEL,
                 persist_dir=config.DB_DIR,
-                top_k=config.TOP_K
+                top_k=config.TOP_K,
+                enable_rewrite=config.ENABLE_REWRITE,
+                rewrite_mode=config.REWRITE_MODE,
+                enable_cache=config.ENABLE_CACHE,
+                cache_size=config.CACHE_SIZE,
+                enable_rerank=config.ENABLE_RERANK,
+                rerank_model=config.RERANK_MODEL,
+                rerank_top_k=config.RERANK_TOP_K
             )
             print(f"  Total chunks: {self._rag.stats()['total_chunks']}")
             print("=" * 50)
         return self._rag
     
-    def retrieve(self, query: str, top_k: int = None) -> List[dict]:
-        """检索"""
+    def retrieve(
+        self, 
+        query: str, 
+        top_k: int = None,
+        enable_rewrite: bool = None,
+        rewrite_mode: str = None,
+        enable_rerank: bool = None,
+        chat_history: List[dict] = None
+    ) -> List[dict]:
+        """检索（支持重写和重排序）"""
         top_k = top_k or config.TOP_K
-        results = self.rag.retrieve(query, top_k=top_k)
+        results = self.rag.retrieve(
+            query, 
+            top_k=top_k,
+            enable_rewrite=enable_rewrite,
+            rewrite_mode=rewrite_mode,
+            enable_rerank=enable_rerank,
+            chat_history=chat_history
+        )
         
         return [
             {
@@ -229,6 +272,46 @@ class RAGService:
             }
             for i, r in enumerate(results)
         ]
+    
+    def retrieve_with_details(
+        self,
+        query: str,
+        top_k: int = None,
+        enable_rewrite: bool = None,
+        rewrite_mode: str = None,
+        enable_rerank: bool = None,
+        chat_history: List[dict] = None
+    ) -> dict:
+        """检索并返回详细信息"""
+        top_k = top_k or config.TOP_K
+        details = self.rag.retrieve_with_details(
+            query,
+            top_k=top_k,
+            enable_rewrite=enable_rewrite,
+            rewrite_mode=rewrite_mode,
+            enable_rerank=enable_rerank,
+            chat_history=chat_history
+        )
+        
+        # 转换结果格式
+        results = [
+            {
+                "index": i + 1,
+                "doc_name": r.chunk.doc_name,
+                "score": round(r.score, 4),
+                "content": r.chunk.content,
+                "metadata": r.chunk.metadata
+            }
+            for i, r in enumerate(details["results"])
+        ]
+        
+        return {
+            "original_query": details["original_query"],
+            "rewritten_queries": details["rewritten_queries"],
+            "rewrite_mode": details["rewrite_mode"],
+            "results": results,
+            "reranked": details["reranked"]
+        }
     
     def generate(
         self,
@@ -322,11 +405,16 @@ async def chat(request: ChatRequest):
     try:
         # 获取或创建会话
         conv_id = request.conversation_id or conversation_manager.create()
+        history = conversation_manager.get_history_for_prompt(conv_id)
         
-        # 检索
+        # 检索（支持重写和重排序）
         retrieval_results = rag_service.retrieve(
             request.message,
-            top_k=request.top_k or config.TOP_K
+            top_k=request.top_k or config.TOP_K,
+            enable_rewrite=request.enable_rewrite,
+            rewrite_mode=request.rewrite_mode,
+            enable_rerank=request.enable_rerank,
+            chat_history=history
         )
         
         # 判断是否拒绝回答
@@ -335,7 +423,6 @@ async def chat(request: ChatRequest):
         if refused:
             answer = get_prompt("no_context")
         else:
-            history = conversation_manager.get_history_for_prompt(conv_id)
             answer = rag_service.generate(request.message, retrieval_results, history)
         
         # 保存消息
@@ -371,10 +458,15 @@ async def chat_stream(request: ChatRequest):
     """聊天接口（流式）"""
     try:
         conv_id = request.conversation_id or conversation_manager.create()
+        history = conversation_manager.get_history_for_prompt(conv_id)
         
         retrieval_results = rag_service.retrieve(
             request.message,
-            top_k=request.top_k or config.TOP_K
+            top_k=request.top_k or config.TOP_K,
+            enable_rewrite=request.enable_rewrite,
+            rewrite_mode=request.rewrite_mode,
+            enable_rerank=request.enable_rerank,
+            chat_history=history
         )
         
         refused = should_refuse(retrieval_results, config.RELEVANCE_THRESHOLD)
@@ -403,13 +495,12 @@ async def chat_stream(request: ChatRequest):
             
             if refused:
                 answer = get_prompt("no_context")
-                yield f"data: {json.dumps({'type': 'content', 'data': answer}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'content', 'content': answer}, ensure_ascii=False)}\n\n"
                 full_response = answer
             else:
-                history = conversation_manager.get_history_for_prompt(conv_id)
                 for chunk in rag_service.generate_stream(request.message, retrieval_results, history):
                     full_response += chunk
-                    yield f"data: {json.dumps({'type': 'content', 'data': chunk}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'content', 'content': chunk}, ensure_ascii=False)}\n\n"
             
             # 保存消息
             conversation_manager.add_message(conv_id, "user", request.message)
@@ -467,13 +558,152 @@ async def clear_conversations():
 
 @app.post("/api/retrieve")
 async def retrieve(request: ChatRequest):
-    """仅检索接口"""
+    """检索接口（支持重写和重排序）"""
     try:
         results = rag_service.retrieve(
             request.message,
-            top_k=request.top_k or config.TOP_K
+            top_k=request.top_k or config.TOP_K,
+            enable_rewrite=request.enable_rewrite,
+            rewrite_mode=request.rewrite_mode,
+            enable_rerank=request.enable_rerank
         )
         return {"query": request.message, "results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/retrieve/details")
+async def retrieve_with_details(request: ChatRequest):
+    """检索接口（返回详细信息，包括重写后的查询）"""
+    try:
+        # 获取对话历史（如果有）
+        chat_history = None
+        if request.conversation_id:
+            chat_history = conversation_manager.get_history_for_prompt(request.conversation_id)
+        
+        details = rag_service.retrieve_with_details(
+            request.message,
+            top_k=request.top_k or config.TOP_K,
+            enable_rewrite=request.enable_rewrite,
+            rewrite_mode=request.rewrite_mode,
+            enable_rerank=request.enable_rerank,
+            chat_history=chat_history
+        )
+        return details
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class RewriteRequest(BaseModel):
+    """查询重写请求"""
+    query: str = Field(..., description="原始查询")
+    mode: str = Field("single", description="重写模式: single/multi/context")
+    conversation_id: Optional[str] = Field(None, description="会话ID（context模式需要）")
+
+
+@app.post("/api/rewrite")
+async def rewrite_query(request: RewriteRequest):
+    """查询重写接口"""
+    try:
+        rewriter = rag_service.rag.query_rewriter
+        
+        if request.mode == "single":
+            rewritten = rewriter.rewrite(request.query)
+            return {
+                "original": request.query,
+                "rewritten": [rewritten],
+                "mode": "single"
+            }
+        elif request.mode == "multi":
+            queries = rewriter.generate_multi_queries(request.query)
+            return {
+                "original": request.query,
+                "rewritten": queries,
+                "mode": "multi"
+            }
+        elif request.mode == "context":
+            history = []
+            if request.conversation_id:
+                history = conversation_manager.get_history_for_prompt(request.conversation_id)
+            rewritten = rewriter.rewrite_with_context(request.query, history)
+            return {
+                "original": request.query,
+                "rewritten": [rewritten],
+                "mode": "context"
+            }
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown mode: {request.mode}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AnalyzeRequest(BaseModel):
+    """查询分析请求"""
+    query: str = Field(..., description="查询")
+
+
+@app.post("/api/analyze")
+async def analyze_query(request: AnalyzeRequest):
+    """分析查询，推荐重写模式"""
+    try:
+        analysis = do_analyze_query(request.query)
+        return {
+            "query": request.query,
+            "features": analysis["features"],
+            "recommended_mode": analysis["recommended_mode"],
+            "reason": analysis["reason"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/cache/stats")
+async def get_cache_stats():
+    """获取查询缓存统计信息"""
+    try:
+        stats = rag_service.rag.get_cache_stats()
+        if stats is None:
+            return {
+                "enabled": False,
+                "message": "缓存未启用"
+            }
+        return {
+            "enabled": True,
+            **stats
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/cache/clear")
+async def clear_cache():
+    """清空查询缓存"""
+    try:
+        rag_service.rag.clear_cache()
+        return {"success": True, "message": "缓存已清空"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class HyDERequest(BaseModel):
+    """HyDE 请求"""
+    query: str = Field(..., description="用户查询")
+    short: bool = Field(False, description="是否生成短文档")
+
+
+@app.post("/api/hyde")
+async def generate_hyde_document(request: HyDERequest):
+    """生成 HyDE 假设文档"""
+    try:
+        hyde_doc = rag_service.rag.query_rewriter.generate_hyde_document(
+            request.query, 
+            short=request.short
+        )
+        return {
+            "query": request.query,
+            "hyde_document": hyde_doc,
+            "short": request.short
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -504,6 +734,20 @@ def main():
     parser.add_argument("--embedding", default=None, help="嵌入模型")
     parser.add_argument("--db-dir", default=None, help="FAISS 索引目录")
     
+    # 查询重写配置
+    parser.add_argument("--enable-rewrite", action="store_true", help="启用查询重写")
+    parser.add_argument("--rewrite-mode", default=None, 
+                        choices=["single", "multi", "context", "auto", "hyde", "hyde_short"],
+                        help="查询重写模式")
+    parser.add_argument("--enable-cache", action="store_true", default=None, help="启用查询缓存")
+    parser.add_argument("--no-cache", action="store_true", help="禁用查询缓存")
+    parser.add_argument("--cache-size", type=int, default=None, help="缓存大小")
+    
+    # 重排序配置
+    parser.add_argument("--enable-rerank", action="store_true", help="启用重排序")
+    parser.add_argument("--rerank-model", default=None, help="重排序模型")
+    parser.add_argument("--rerank-top-k", type=int, default=None, help="重排序后返回数量")
+    
     args = parser.parse_args()
     
     # 覆盖配置
@@ -520,9 +764,38 @@ def main():
     if args.db_dir:
         config.DB_DIR = args.db_dir
     
+    # 查询重写配置
+    if args.enable_rewrite:
+        config.ENABLE_REWRITE = True
+    if args.rewrite_mode:
+        config.REWRITE_MODE = args.rewrite_mode
+    
+    # 缓存配置
+    if args.enable_cache:
+        config.ENABLE_CACHE = True
+    if args.no_cache:
+        config.ENABLE_CACHE = False
+    if args.cache_size:
+        config.CACHE_SIZE = args.cache_size
+    
+    # 重排序配置
+    if args.enable_rerank:
+        config.ENABLE_RERANK = True
+    if args.rerank_model:
+        config.RERANK_MODEL = args.rerank_model
+    if args.rerank_top_k:
+        config.RERANK_TOP_K = args.rerank_top_k
+    
     print(f"\n🚀 Starting RAG API Server")
     print(f"   URL: http://{args.host}:{args.port}")
-    print(f"   Docs: http://{args.host}:{args.port}/docs\n")
+    print(f"   Docs: http://{args.host}:{args.port}/docs")
+    if config.ENABLE_REWRITE:
+        print(f"   Query Rewrite: {config.REWRITE_MODE}")
+    if config.ENABLE_CACHE:
+        print(f"   Cache: enabled (size: {config.CACHE_SIZE})")
+    if config.ENABLE_RERANK:
+        print(f"   Rerank: {config.RERANK_MODEL}")
+    print()
     
     uvicorn.run(
         "main:app" if args.reload else app,

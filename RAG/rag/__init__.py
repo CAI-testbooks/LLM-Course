@@ -1,19 +1,36 @@
 """
-RAG 核心模块
+医疗问答 RAG 系统
+支持多轮对话、来源引用、查询重写、HyDE、重排序、缓存
 """
 
-from .rag import RAG, Chunk, RetrievalResult, Chunker, Embedder, FAISSStore, LLMClient
+from .rag import (
+    RAG,
+    Chunk,
+    RetrievalResult,
+    Chunker,
+    Embedder,
+    FAISSStore,
+    LLMClient,
+    QueryRewriter,
+    CachedQueryRewriter,
+    QueryCache,
+    Reranker,
+)
+
 from .prompts import (
-    PROMPTS,
     get_prompt,
     format_chat_history,
     format_context,
     build_rag_prompt,
-    should_refuse
+    build_rewrite_prompt,
+    should_refuse,
+    analyze_query,
+    PROMPTS,
 )
 
+__version__ = "2.1.0"
 __all__ = [
-    # RAG 核心类
+    # 核心类
     "RAG",
     "Chunk",
     "RetrievalResult",
@@ -21,11 +38,18 @@ __all__ = [
     "Embedder",
     "FAISSStore",
     "LLMClient",
+    # 查询处理
+    "QueryRewriter",
+    "CachedQueryRewriter",
+    "QueryCache",
+    "Reranker",
     # 提示词相关
-    "PROMPTS",
     "get_prompt",
     "format_chat_history",
     "format_context",
     "build_rag_prompt",
+    "build_rewrite_prompt",
     "should_refuse",
+    "analyze_query",
+    "PROMPTS",
 ]

@@ -8,7 +8,7 @@ import json
 import pickle
 import hashlib
 from pathlib import Path
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 from dataclasses import dataclass, asdict
 import numpy as np
 
@@ -261,6 +261,437 @@ class FAISSStore:
             self.chunks_path.unlink()
 
 
+# ==================== 查询重写器 ====================
+
+class QueryRewriter:
+    """
+    查询重写器 - 优化用户查询以提高检索效果
+    
+    支持三种模式：
+    - single: 单查询重写，将口语化查询转为专业术语
+    - multi: 多查询生成，从多个角度扩展查询
+    - context: 上下文感知重写，结合对话历史补全查询
+    """
+    
+    def __init__(self, llm_client=None):
+        """
+        初始化查询重写器
+        
+        Args:
+            llm_client: LLMClient 实例，用于调用 LLM 生成重写查询
+        """
+        self.llm = llm_client
+    
+    def set_llm(self, llm_client):
+        """设置 LLM 客户端"""
+        self.llm = llm_client
+    
+    def rewrite(self, query: str, temperature: float = 0.3) -> str:
+        """
+        单查询重写 - 优化查询为更专业的形式
+        
+        Args:
+            query: 原始查询
+            temperature: 生成温度（较低以保持稳定）
+        
+        Returns:
+            重写后的查询
+        """
+        if not self.llm:
+            raise ValueError("LLM client not set. Call set_llm() first.")
+        
+        from .prompts import build_rewrite_prompt
+        prompt = build_rewrite_prompt(query, mode="single")
+        
+        try:
+            rewritten = self.llm.generate(prompt, temperature=temperature, max_tokens=100)
+            rewritten = rewritten.strip().strip('"\'')
+            # 如果重写结果为空或过长，返回原查询
+            if not rewritten or len(rewritten) > len(query) * 3:
+                return query
+            return rewritten
+        except Exception as e:
+            print(f"Query rewrite failed: {e}")
+            return query
+    
+    def generate_multi_queries(self, query: str, n: int = 3, temperature: float = 0.5) -> List[str]:
+        """
+        多查询生成 - 从多个角度扩展查询
+        
+        Args:
+            query: 原始查询
+            n: 生成查询数量（默认3个）
+            temperature: 生成温度
+        
+        Returns:
+            查询列表（包含原始查询）
+        """
+        if not self.llm:
+            raise ValueError("LLM client not set. Call set_llm() first.")
+        
+        from prompts import build_rewrite_prompt
+        prompt = build_rewrite_prompt(query, mode="multi")
+        
+        try:
+            response = self.llm.generate(prompt, temperature=temperature, max_tokens=300)
+            # 解析多行输出
+            queries = [q.strip() for q in response.strip().split('\n') if q.strip()]
+            # 去除编号（如 "1. xxx" -> "xxx"）
+            cleaned = []
+            for q in queries:
+                import re
+                q = re.sub(r'^\d+[\.\)、]\s*', '', q)
+                if q and len(q) > 2:
+                    cleaned.append(q)
+            
+            # 确保返回 n 个查询，包含原始查询
+            result = [query]  # 原始查询放在第一位
+            for q in cleaned[:n]:
+                if q != query and q not in result:
+                    result.append(q)
+            
+            return result[:n+1]  # 返回原始 + n个扩展
+        except Exception as e:
+            print(f"Multi-query generation failed: {e}")
+            return [query]
+    
+    def rewrite_with_context(
+        self, 
+        query: str, 
+        chat_history: List[Dict[str, str]],
+        temperature: float = 0.3
+    ) -> str:
+        """
+        上下文感知重写 - 结合对话历史补全查询
+        
+        Args:
+            query: 当前查询
+            chat_history: 对话历史 [{"role": "user/assistant", "content": "..."}]
+            temperature: 生成温度
+        
+        Returns:
+            补全后的查询
+        """
+        if not self.llm:
+            raise ValueError("LLM client not set. Call set_llm() first.")
+        
+        # 格式化历史对话
+        history_str = ""
+        for msg in chat_history[-6:]:  # 只取最近3轮
+            role = "用户" if msg["role"] == "user" else "助手"
+            history_str += f"{role}: {msg['content']}\n"
+        
+        if not history_str:
+            return query
+        
+        from prompts import build_rewrite_prompt
+        prompt = build_rewrite_prompt(query, mode="context", history=history_str)
+        
+        try:
+            rewritten = self.llm.generate(prompt, temperature=temperature, max_tokens=150)
+            rewritten = rewritten.strip().strip('"\'')
+            if not rewritten:
+                return query
+            return rewritten
+        except Exception as e:
+            print(f"Context-aware rewrite failed: {e}")
+            return query
+    
+    def generate_hyde_document(
+        self,
+        query: str,
+        short: bool = False,
+        temperature: float = 0.5
+    ) -> str:
+        """
+        HyDE - 生成假设性文档
+        
+        根据用户查询生成一个假设性的理想文档，用于检索。
+        这种方法可以提高语义匹配的准确性。
+        
+        Args:
+            query: 原始查询
+            short: 是否生成短文档（50-100字 vs 100-200字）
+            temperature: 生成温度
+        
+        Returns:
+            假设性文档内容
+        """
+        if not self.llm:
+            raise ValueError("LLM client not set. Call set_llm() first.")
+        
+        from prompts import build_rewrite_prompt
+        mode = "hyde_short" if short else "hyde"
+        prompt = build_rewrite_prompt(query, mode=mode)
+        
+        try:
+            hyde_doc = self.llm.generate(prompt, temperature=temperature, max_tokens=300)
+            hyde_doc = hyde_doc.strip()
+            if not hyde_doc:
+                return query
+            return hyde_doc
+        except Exception as e:
+            print(f"HyDE generation failed: {e}")
+            return query
+
+
+class QueryCache:
+    """
+    查询缓存 - 避免重复的 LLM 调用
+    
+    使用 LRU 策略缓存查询重写结果
+    """
+    
+    def __init__(self, max_size: int = 1000):
+        """
+        初始化缓存
+        
+        Args:
+            max_size: 最大缓存条目数
+        """
+        from collections import OrderedDict
+        self._cache: OrderedDict = OrderedDict()
+        self.max_size = max_size
+        self.hits = 0
+        self.misses = 0
+    
+    def _make_key(self, query: str, mode: str, **kwargs) -> str:
+        """生成缓存键"""
+        # 将参数序列化为键
+        import json
+        params = {"query": query, "mode": mode, **kwargs}
+        return hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()
+    
+    def get(self, query: str, mode: str, **kwargs) -> Optional[str]:
+        """
+        获取缓存结果
+        
+        Returns:
+            缓存的结果，如果不存在返回 None
+        """
+        key = self._make_key(query, mode, **kwargs)
+        if key in self._cache:
+            self.hits += 1
+            # 移到末尾（LRU）
+            self._cache.move_to_end(key)
+            return self._cache[key]
+        self.misses += 1
+        return None
+    
+    def set(self, query: str, mode: str, result: str, **kwargs):
+        """存储缓存结果"""
+        key = self._make_key(query, mode, **kwargs)
+        self._cache[key] = result
+        self._cache.move_to_end(key)
+        
+        # 如果超出大小限制，删除最旧的条目
+        while len(self._cache) > self.max_size:
+            self._cache.popitem(last=False)
+    
+    def clear(self):
+        """清空缓存"""
+        self._cache.clear()
+        self.hits = 0
+        self.misses = 0
+    
+    @property
+    def stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        total = self.hits + self.misses
+        hit_rate = self.hits / total if total > 0 else 0.0
+        return {
+            "size": len(self._cache),
+            "max_size": self.max_size,
+            "hits": self.hits,
+            "misses": self.misses,
+            "hit_rate": hit_rate
+        }
+
+
+class CachedQueryRewriter(QueryRewriter):
+    """
+    带缓存的查询重写器
+    
+    自动缓存重写结果，避免重复的 LLM 调用
+    """
+    
+    def __init__(self, llm_client=None, cache_size: int = 1000):
+        super().__init__(llm_client)
+        self.cache = QueryCache(max_size=cache_size)
+    
+    def rewrite(self, query: str, temperature: float = 0.3) -> str:
+        """带缓存的单查询重写"""
+        # 检查缓存
+        cached = self.cache.get(query, "single", temperature=temperature)
+        if cached is not None:
+            return cached
+        
+        # 调用父类方法
+        result = super().rewrite(query, temperature)
+        
+        # 存入缓存
+        self.cache.set(query, "single", result, temperature=temperature)
+        return result
+    
+    def generate_multi_queries(self, query: str, n: int = 3, temperature: float = 0.5) -> List[str]:
+        """带缓存的多查询生成"""
+        cached = self.cache.get(query, "multi", n=n, temperature=temperature)
+        if cached is not None:
+            return cached
+        
+        result = super().generate_multi_queries(query, n, temperature)
+        
+        self.cache.set(query, "multi", result, n=n, temperature=temperature)
+        return result
+    
+    def generate_hyde_document(self, query: str, short: bool = False, temperature: float = 0.5) -> str:
+        """带缓存的 HyDE 文档生成"""
+        mode = "hyde_short" if short else "hyde"
+        cached = self.cache.get(query, mode, temperature=temperature)
+        if cached is not None:
+            return cached
+        
+        result = super().generate_hyde_document(query, short, temperature)
+        
+        self.cache.set(query, mode, result, temperature=temperature)
+        return result
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """获取缓存统计信息"""
+        return self.cache.stats
+
+
+# ==================== 重排序器 ====================
+
+class Reranker:
+    """
+    重排序器 - 使用 Cross-Encoder 对检索结果重新排序
+    
+    支持的模型：
+    - BAAI/bge-reranker-base (中文，快速)
+    - BAAI/bge-reranker-large (中文，更准确)
+    - BAAI/bge-reranker-v2-m3 (多语言)
+    """
+    
+    # 推荐的 Reranker 模型
+    MODELS = {
+        "base": "BAAI/bge-reranker-base",
+        "large": "BAAI/bge-reranker-large",
+        "m3": "BAAI/bge-reranker-v2-m3",
+    }
+    
+    def __init__(self, model_name: str = "BAAI/bge-reranker-base"):
+        """
+        初始化重排序器
+        
+        Args:
+            model_name: Reranker 模型名称或别名 (base/large/m3)
+        """
+        # 处理别名
+        if model_name in self.MODELS:
+            model_name = self.MODELS[model_name]
+        
+        self.model_name = model_name
+        self._model = None
+    
+    @property
+    def model(self):
+        """懒加载模型"""
+        if self._model is None:
+            print(f"Loading reranker model: {self.model_name}")
+            from sentence_transformers import CrossEncoder
+            self._model = CrossEncoder(self.model_name, max_length=512)
+        return self._model
+    
+    def rerank(
+        self, 
+        query: str, 
+        results: List['RetrievalResult'],
+        top_k: int = None,
+        score_threshold: float = None,
+        return_scores: bool = False
+    ) -> List['RetrievalResult']:
+        """
+        对检索结果重新排序
+        
+        Args:
+            query: 查询文本
+            results: 检索结果列表 (RetrievalResult)
+            top_k: 返回前 k 个结果（None 表示全部返回）
+            score_threshold: 分数阈值，低于此分数的结果将被过滤
+            return_scores: 是否将 rerank 分数替换原始分数
+        
+        Returns:
+            重排序后的结果列表
+        """
+        if not results:
+            return []
+        
+        # 构建 query-document pairs
+        pairs = [(query, r.chunk.content) for r in results]
+        
+        # 计算相关性分数
+        scores = self.model.predict(pairs)
+        
+        # 将分数与结果配对并排序
+        scored_results = list(zip(results, scores))
+        scored_results.sort(key=lambda x: x[1], reverse=True)
+        
+        # 应用阈值过滤
+        if score_threshold is not None:
+            scored_results = [(r, s) for r, s in scored_results if s >= score_threshold]
+        
+        # 取 top_k
+        if top_k is not None:
+            scored_results = scored_results[:top_k]
+        
+        # 构建返回结果
+        reranked = []
+        for result, rerank_score in scored_results:
+            if return_scores:
+                # 用 rerank 分数替换原始分数
+                reranked.append(RetrievalResult(
+                    chunk=result.chunk,
+                    score=float(rerank_score)
+                ))
+            else:
+                reranked.append(result)
+        
+        return reranked
+    
+    def rerank_texts(
+        self,
+        query: str,
+        texts: List[str],
+        top_k: int = None
+    ) -> List[Tuple[int, str, float]]:
+        """
+        对文本列表进行重排序（简化接口）
+        
+        Args:
+            query: 查询文本
+            texts: 文本列表
+            top_k: 返回前 k 个
+        
+        Returns:
+            排序后的 (原始索引, 文本, 分数) 列表
+        """
+        if not texts:
+            return []
+        
+        pairs = [(query, t) for t in texts]
+        scores = self.model.predict(pairs)
+        
+        # 带索引排序
+        indexed = [(i, t, s) for i, (t, s) in enumerate(zip(texts, scores))]
+        indexed.sort(key=lambda x: x[2], reverse=True)
+        
+        if top_k:
+            indexed = indexed[:top_k]
+        
+        return indexed
+
+
 # ==================== LLM 客户端 ====================
 
 class LLMClient:
@@ -283,7 +714,7 @@ class LLMClient:
     def __init__(
         self, 
         base_url: str = None,
-        model: str = "gpt-3.5-turbo",
+        model: str = "deepseek-chat",
         api_key: str = None,
         provider: str = None,
         timeout: float = 120.0
@@ -500,7 +931,16 @@ class RAG:
         # 检索配置
         top_k: int = 5,
         # 批量处理配置
-        batch_size: int = 64
+        batch_size: int = 64,
+        # 查询重写配置
+        enable_rewrite: bool = False,
+        rewrite_mode: str = "single",  # single/multi/context/auto/hyde
+        enable_cache: bool = True,  # 是否启用查询缓存
+        cache_size: int = 1000,  # 缓存大小
+        # 重排序配置
+        enable_rerank: bool = False,
+        rerank_model: str = "BAAI/bge-reranker-base",
+        rerank_top_k: int = None,  # None 表示使用 top_k
     ):
         """
         初始化 RAG 引擎
@@ -516,26 +956,36 @@ class RAG:
             chunk_size: 分块大小
             chunk_overlap: 分块重叠
             top_k: 默认检索数量
-            batch_size: 批量 embedding 大小（默认 64，即积累 64 个 chunk 后一次性 embedding）
+            batch_size: 批量 embedding 大小
+            enable_rewrite: 是否启用查询重写
+            rewrite_mode: 重写模式 (single/multi/context/auto/hyde)
+            enable_cache: 是否启用查询缓存
+            cache_size: 缓存最大条目数
+            enable_rerank: 是否启用重排序
+            rerank_model: 重排序模型
+            rerank_top_k: 重排序后返回的数量（None 表示使用 top_k）
         
         Examples:
-            # 使用 OpenAI
-            rag = RAG(provider="openai", api_key="sk-xxx", model_name="gpt-4")
+            # 基础用法
+            rag = RAG(provider="deepseek", api_key="sk-xxx")
             
-            # 使用 DeepSeek
-            rag = RAG(provider="deepseek", api_key="sk-xxx", model_name="deepseek-chat")
+            # 启用查询重写
+            rag = RAG(provider="deepseek", api_key="sk-xxx",
+                      enable_rewrite=True, rewrite_mode="single")
             
-            # 使用本地 vLLM
-            rag = RAG(base_url="http://localhost:8000/v1", model_name="Qwen/Qwen2.5-7B")
+            # 启用 HyDE
+            rag = RAG(provider="deepseek", api_key="sk-xxx",
+                      enable_rewrite=True, rewrite_mode="hyde")
             
-            # 使用环境变量 (OPENAI_API_KEY 或 LLM_API_KEY)
-            rag = RAG(provider="openai", model_name="gpt-4")
+            # 启用重排序
+            rag = RAG(provider="deepseek", api_key="sk-xxx",
+                      enable_rerank=True, rerank_model="BAAI/bge-reranker-base")
             
-            # 批量添加文档（推荐）
-            with RAG(...) as rag:
-                for doc in documents:
-                    rag.add_document(doc)
-                # 退出时自动 flush
+            # 同时启用（带缓存）
+            rag = RAG(provider="deepseek", api_key="sk-xxx",
+                      enable_rewrite=True, rewrite_mode="single",
+                      enable_rerank=True, rerank_top_k=5,
+                      enable_cache=True)
         """
         self.chunker = Chunker(chunk_size, chunk_overlap)
         self.embedder = Embedder(embedding_model)
@@ -555,6 +1005,36 @@ class RAG:
         # 批量 embedding 配置
         self.batch_size = batch_size
         self._chunk_buffer: List[Chunk] = []  # 缓冲区
+        
+        # 查询重写配置
+        self.enable_rewrite = enable_rewrite
+        self.rewrite_mode = rewrite_mode
+        self.enable_cache = enable_cache
+        self.cache_size = cache_size
+        self._query_rewriter = None
+        
+        # 重排序配置
+        self.enable_rerank = enable_rerank
+        self.rerank_model = rerank_model
+        self.rerank_top_k = rerank_top_k
+        self._reranker = None
+    
+    @property
+    def query_rewriter(self) -> QueryRewriter:
+        """懒加载查询重写器（带缓存支持）"""
+        if self._query_rewriter is None:
+            if self.enable_cache:
+                self._query_rewriter = CachedQueryRewriter(self.llm, cache_size=self.cache_size)
+            else:
+                self._query_rewriter = QueryRewriter(self.llm)
+        return self._query_rewriter
+    
+    @property
+    def reranker(self) -> Reranker:
+        """懒加载重排序器"""
+        if self._reranker is None:
+            self._reranker = Reranker(self.rerank_model)
+        return self._reranker
     
     # ==================== 批量处理方法 ====================
     
@@ -725,12 +1205,193 @@ class RAG:
         
         return len(chunks)
     
-    def retrieve(self, query: str, top_k: int = None) -> List[RetrievalResult]:
-        """检索相关文档"""
+    def retrieve(
+        self, 
+        query: str, 
+        top_k: int = None,
+        enable_rewrite: bool = None,
+        rewrite_mode: str = None,
+        enable_rerank: bool = None,
+        chat_history: List[Dict[str, str]] = None
+    ) -> List[RetrievalResult]:
+        """
+        检索相关文档（支持查询重写、HyDE 和重排序）
+        
+        Args:
+            query: 原始查询
+            top_k: 返回数量
+            enable_rewrite: 是否启用重写（None 使用实例配置）
+            rewrite_mode: 重写模式（None 使用实例配置）
+                - single: 单查询重写
+                - multi: 多查询扩展
+                - context: 上下文感知重写
+                - auto: 自动选择模式
+                - hyde: HyDE 假设文档嵌入
+            enable_rerank: 是否启用重排序（None 使用实例配置）
+            chat_history: 对话历史（context模式需要）
+        
+        Returns:
+            检索结果列表
+        """
         top_k = top_k or self.top_k
-        query_emb = self.embedder.embed_query(query)
-        results = self.vector_store.search(query_emb, top_k)
-        return [RetrievalResult(chunk=chunk, score=score) for chunk, score in results]
+        enable_rewrite = enable_rewrite if enable_rewrite is not None else self.enable_rewrite
+        rewrite_mode = rewrite_mode or self.rewrite_mode
+        enable_rerank = enable_rerank if enable_rerank is not None else self.enable_rerank
+        
+        # 查询重写/HyDE
+        queries = [query]  # 默认使用原始查询
+        use_hyde = False
+        
+        if enable_rewrite:
+            if rewrite_mode == "auto":
+                # 自动选择模式
+                from prompts import analyze_query
+                analysis = analyze_query(query)
+                rewrite_mode = analysis["recommended_mode"]
+            
+            if rewrite_mode == "single":
+                rewritten = self.query_rewriter.rewrite(query)
+                queries = [rewritten]
+            elif rewrite_mode == "multi":
+                queries = self.query_rewriter.generate_multi_queries(query)
+            elif rewrite_mode == "context" and chat_history:
+                rewritten = self.query_rewriter.rewrite_with_context(query, chat_history)
+                queries = [rewritten]
+            elif rewrite_mode in ("hyde", "hyde_short"):
+                # HyDE 模式：生成假设文档
+                short = (rewrite_mode == "hyde_short")
+                hyde_doc = self.query_rewriter.generate_hyde_document(query, short=short)
+                queries = [hyde_doc]
+                use_hyde = True
+        
+        # 执行检索
+        if len(queries) == 1:
+            # 单查询检索
+            search_top_k = top_k * 2 if enable_rerank else top_k
+            query_emb = self.embedder.embed_query(queries[0])
+            results = self.vector_store.search(query_emb, search_top_k)
+            results = [RetrievalResult(chunk=chunk, score=score) for chunk, score in results]
+        else:
+            # 多查询融合检索
+            search_top_k = top_k * 2 if enable_rerank else top_k
+            all_results = {}  # chunk_id -> (chunk, max_score)
+            
+            for q in queries:
+                query_emb = self.embedder.embed_query(q)
+                q_results = self.vector_store.search(query_emb, search_top_k)
+                
+                for chunk, score in q_results:
+                    if chunk.chunk_id in all_results:
+                        # 取最高分
+                        if score > all_results[chunk.chunk_id][1]:
+                            all_results[chunk.chunk_id] = (chunk, score)
+                    else:
+                        all_results[chunk.chunk_id] = (chunk, score)
+            
+            # 排序
+            results = [
+                RetrievalResult(chunk=c, score=s) 
+                for c, s in sorted(all_results.values(), key=lambda x: x[1], reverse=True)
+            ][:search_top_k]
+        
+        # 重排序
+        if enable_rerank and results:
+            results = self.reranker.rerank(
+                query,  # 使用原始查询进行重排序
+                results,
+                top_k=self.rerank_top_k or top_k,
+                return_scores=True
+            )
+        elif not enable_rerank:
+            results = results[:top_k]
+        
+        return results
+    
+    def get_cache_stats(self) -> Optional[Dict[str, Any]]:
+        """获取查询缓存统计信息"""
+        if self.enable_cache and hasattr(self.query_rewriter, 'get_cache_stats'):
+            return self.query_rewriter.get_cache_stats()
+        return None
+    
+    def clear_cache(self):
+        """清空查询缓存"""
+        if self.enable_cache and hasattr(self.query_rewriter, 'cache'):
+            self.query_rewriter.cache.clear()
+    
+    def retrieve_with_details(
+        self,
+        query: str,
+        top_k: int = None,
+        enable_rewrite: bool = None,
+        rewrite_mode: str = None,
+        enable_rerank: bool = None,
+        chat_history: List[Dict[str, str]] = None
+    ) -> Dict:
+        """
+        检索并返回详细信息（包含重写后的查询等）
+        
+        Returns:
+            {
+                "original_query": 原始查询,
+                "rewritten_queries": 重写后的查询列表,
+                "rewrite_mode": 实际使用的重写模式,
+                "hyde_document": HyDE 生成的假设文档（如使用 HyDE 模式）,
+                "results": 检索结果,
+                "reranked": 是否进行了重排序,
+                "cache_stats": 缓存统计信息（如启用缓存）
+            }
+        """
+        top_k = top_k or self.top_k
+        enable_rewrite = enable_rewrite if enable_rewrite is not None else self.enable_rewrite
+        rewrite_mode = rewrite_mode or self.rewrite_mode
+        enable_rerank = enable_rerank if enable_rerank is not None else self.enable_rerank
+        
+        # 查询重写
+        rewritten_queries = [query]
+        actual_mode = None
+        hyde_document = None
+        
+        if enable_rewrite:
+            if rewrite_mode == "auto":
+                from prompts import analyze_query
+                analysis = analyze_query(query)
+                actual_mode = analysis["recommended_mode"]
+            else:
+                actual_mode = rewrite_mode
+            
+            if actual_mode == "single":
+                rewritten = self.query_rewriter.rewrite(query)
+                rewritten_queries = [rewritten]
+            elif actual_mode == "multi":
+                rewritten_queries = self.query_rewriter.generate_multi_queries(query)
+            elif actual_mode == "context" and chat_history:
+                rewritten = self.query_rewriter.rewrite_with_context(query, chat_history)
+                rewritten_queries = [rewritten]
+            elif actual_mode in ("hyde", "hyde_short"):
+                short = (actual_mode == "hyde_short")
+                hyde_document = self.query_rewriter.generate_hyde_document(query, short=short)
+                rewritten_queries = [hyde_document]
+        
+        # 执行检索
+        results = self.retrieve(
+            query, top_k, enable_rewrite, rewrite_mode, enable_rerank, chat_history
+        )
+        
+        response = {
+            "original_query": query,
+            "rewritten_queries": rewritten_queries,
+            "rewrite_mode": actual_mode,
+            "results": results,
+            "reranked": enable_rerank
+        }
+        
+        if hyde_document:
+            response["hyde_document"] = hyde_document
+        
+        if self.enable_cache:
+            response["cache_stats"] = self.get_cache_stats()
+        
+        return response
     
     def _build_context(self, results: List[RetrievalResult]) -> str:
         """构建上下文"""
