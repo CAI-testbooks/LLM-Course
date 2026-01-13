@@ -1,198 +1,287 @@
-from fastapi import FastAPI, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 import base64
 import ollama
-from PIL import Image
+import utils
+import os
 import io
-import cv2  # 新增：视频处理库
-import numpy as np
-from datetime import datetime
+import logging
+import uuid
+import asyncio
+import json
 
-app = FastAPI()
+# ==================== 基础配置 ====================
+# 日志配置
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# 挂载静态文件目录（存放前端页面）
+# 全局进度缓存（key: file_id，value: 进度信息）
+progress_cache = {}
+# 全局结果缓存（key: file_id，value: 分析结果+标注图片）
+result_cache = {}
+
+# 实验参数（大模型优化配置）
+EXPERIMENT_CONFIG = {
+    "max_frames": 10,
+    "frame_diff_threshold": 30,
+    "use_yolo": True,
+    "llava_model": "llava:7b",  # 轻量化模型，速度更快
+    "llava_params": {
+        "temperature": 0.5,
+        "top_k": 30,
+        "max_tokens": 500
+    }
+}
+
+# FastAPI实例
+app = FastAPI(title="军事场景识别Demo（大模型优化版）")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-# 新增：视频抽帧函数（抽取关键帧，避免分析所有帧）
-def extract_video_frames(video_data, frame_interval=10, max_frames=10):
-    """
-    从视频中抽取关键帧
-    :param video_data: 视频二进制数据
-    :param frame_interval: 每隔多少帧抽1帧
-    :param max_frames: 最多抽取多少帧（避免卡顿）
-    :return: 抽取的帧列表（PIL Image格式）
-    """
-    # 将视频数据写入临时内存
-    temp_video = io.BytesIO(video_data)
-    temp_video.seek(0)
-
-    # 保存为临时文件（cv2需要文件路径）
-    temp_filename = f"temp_video_{datetime.now().strftime('%Y%m%d%H%M%S')}.mp4"
-    with open(temp_filename, 'wb') as f:
-        f.write(temp_video.read())
-
-    # 用cv2读取视频
-    cap = cv2.VideoCapture(temp_filename)
-    frames = []
-    frame_count = 0
-    extracted_count = 0
-
-    while cap.isOpened() and extracted_count < max_frames:
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        # 每隔frame_interval帧抽取一帧
-        if frame_count % frame_interval == 0:
-            # 转换颜色空间（cv2默认BGR，PIL是RGB）
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            # 转PIL Image
-            pil_frame = Image.fromarray(frame_rgb)
-            frames.append(pil_frame)
-            extracted_count += 1
-
-        frame_count += 1
-
-    # 释放资源
-    cap.release()
-    # 删除临时文件
-    import os
-    os.remove(temp_filename)
-
-    return frames
-
-
-# 新增：汇总多帧分析结果
-def summarize_frame_results(frame_results):
-    """汇总多个帧的分析结果，生成视频整体描述"""
-    if not frame_results:
-        return "未抽取到视频帧，无法分析"
-
-    # 统计高频信息
-    ground_types = []  # 地面类型
-    main_objects = []  # 主要物体
-    scene_types = []  # 场景类型
-    hide_places = []  # 隐蔽位置
-
-    for result in frame_results:
-        # 解析每帧的结果（按行拆分）
-        lines = result.strip().split('\n')
-        for line in lines:
-            if "地面类型" in line:
-                ground_types.append(line.split('：')[-1].strip())
-            elif "主要物体" in line:
-                main_objects.append(line.split('：')[-1].strip())
-            elif "场景类型" in line:
-                scene_types.append(line.split('：')[-1].strip())
-            elif "隐蔽位置" in line:
-                hide_places.append(line.split('：')[-1].strip())
-
-    # 取出现次数最多的信息（简单统计）
-    def get_most_common(lst):
-        if not lst:
-            return "未识别"
-        return max(set(lst), key=lst.count)
-
-    # 生成汇总结果
-    summary = (
-            f"视频整体环境分析（基于{len(frame_results)}帧）：\n"
-            f"1. 主要地面类型：{get_most_common(ground_types)}\n"
-            f"2. 主要物体：{get_most_common(main_objects)}\n"
-            f"3. 整体场景类型：{get_most_common(scene_types)}\n"
-            f"4. 主要隐蔽位置：{get_most_common(hide_places)}\n"
-            f"\n各帧细节：\n" + "\n---\n".join([f"帧{idx + 1}：{res}" for idx, res in enumerate(frame_results)])
-    )
-    return summary
-
-
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
-    # 返回前端页面
-    with open("static/index.html", "r", encoding="utf-8") as f:
-        return f.read()
-
-
-@app.post("/analyze")
-async def analyze_media(file: UploadFile = File(...)):
-    # 读取上传的文件数据
-    file_data = await file.read()
-    file_type = file.content_type  # 获取文件类型（image/xxx 或 video/xxx）
-
+# ==================== 异步处理文件（整合所有优化） ====================
+async def process_file_async(file_id: str, file_data: bytes, file_name: str):
+    """异步处理文件（更新进度+大模型优化）"""
     try:
-        # 1. 处理图片
-        if file_type.startswith("image"):
-            image = Image.open(io.BytesIO(file_data))
-            # 转base64
-            buffered = io.BytesIO()
-            image.save(buffered, format="PNG")
-            img_base64 = base64.b64encode(buffered.getvalue()).decode()
+        # 1. 初始化进度
+        progress_cache[file_id] = {
+            "step": "开始处理",
+            "progress": 0,
+            "status": "running"
+        }
 
-            # 构造提示词
-            prompt = (
-                "请分析这张图片的环境，并列出以下内容：\n"
-                "1. 主要地面类型（如草地、水泥地、沙地等）\n"
-                "2. 主要物体（如墙体、车辆、树木、建筑物等）\n"
-                "3. 整体场景类型（如城市、野外、森林、军事基地等）\n"
-                "4. 可能存在的隐蔽位置（如墙角、树林、车辆后方等）\n"
-                "5. 是否发现穿迷彩服的人员或军事相关装备？\n"
-                "请用中文回答，尽量简洁明了。"
+        # 2. 判断文件类型
+        file_ext = os.path.splitext(file_name)[1].lower()
+        is_image = file_ext in {'.jpg', '.jpeg', '.png'}
+        is_video = file_ext in {'.mp4', '.avi', '.mov'}
+
+        # ========== 处理图片 ==========
+        if is_image:
+            progress_cache[file_id] = {"step": "分析图片", "progress": 30, "status": "running"}
+            # 读取图片
+            image = utils.Image.open(io.BytesIO(file_data))
+            # YOLO检测
+            progress_cache[file_id] = {"step": "检测士兵", "progress": 50, "status": "running"}
+            yolo_result = utils.detect_soldier_with_yolo(image)
+            # LLaVA分析（带缓存+重试+标准化）
+            progress_cache[file_id] = {"step": "分析军事场景", "progress": 80, "status": "running"}
+            try:  # 新增：单独捕获推理异常
+                llava_parsed = await utils.infer_frame_with_cache(image, yolo_result, EXPERIMENT_CONFIG["llava_model"])
+            except Exception as e:
+                logger.error(f"LLaVA推理失败：{e}")
+                # 推理失败时填充兜底结果
+                llava_parsed = {
+                    "ground_type": "草地",
+                    "scene": "草地隐蔽区",
+                    "hide_place": "树林深处",
+                    "soldier_state": "移动",
+                    "risk": "高"
+                }
+                # 立即更新进度为失败
+                progress_cache[file_id] = {
+                    "step": f"推理失败：{str(e)[:50]}",
+                    "progress": 80,
+                    "status": "failed",
+                    "error": f"LLaVA推理失败：{str(e)}"
+                }
+                return  # 终止处理
+
+            # 可视化标注
+            annotated_img = utils.draw_annotation(image.copy(), yolo_result, llava_parsed)
+            # 生成最终结果
+            final_result = (
+                f"【YOLO士兵检测】\n{yolo_result}\n\n【军事场景分析】\n"
+                f"地面类型：{llava_parsed['ground_type']}\n"
+                f"场景细分：{llava_parsed['scene']}\n"
+                f"隐蔽点：{llava_parsed['hide_place']}\n"
+                f"士兵状态：{llava_parsed['soldier_state']}\n"
+                f"风险等级：{llava_parsed['risk']}"
             )
+            # 缓存结果
+            result_cache[file_id] = {
+                "type": "image",
+                "result": final_result,
+                "annotated_img": annotated_img,
+                "llava_parsed": llava_parsed
+            }
+            # 更新进度
+            progress_cache[file_id] = {"step": "分析完成", "progress": 100, "status": "success"}
 
-            # 调用LLaVA
-            response = ollama.chat(
-                model="llava:7b",
-                messages=[{'role': 'user', 'content': prompt, 'images': [img_base64]}]
+        # ========== 处理视频 ==========
+        elif is_video:
+            progress_cache[file_id] = {"step": "智能抽帧", "progress": 20, "status": "running"}
+            # 智能抽帧
+            frames = utils.extract_smart_frames(
+                file_data,
+                max_frames=EXPERIMENT_CONFIG["max_frames"],
+                threshold=EXPERIMENT_CONFIG["frame_diff_threshold"]
             )
-            result = response['message']['content']
-            return JSONResponse(content={"type": "image", "result": result})
+            progress_cache[file_id] = {"step": f"抽帧完成（共{len(frames)}帧）", "progress": 30, "status": "running"}
 
-        # 2. 处理视频
-        elif file_type.startswith("video"):
-            # 抽取视频关键帧
-            frames = extract_video_frames(file_data, frame_interval=10, max_frames=10)
-            if not frames:
-                return JSONResponse(content={"error": "无法抽取视频帧"}, status_code=400)
+            # YOLO检测所有帧
+            progress_cache[file_id] = {"step": "批量检测士兵", "progress": 40, "status": "running"}
+            yolo_results = [utils.detect_soldier_with_yolo(frame) for frame in frames]
 
-            # 分析每帧
+            # 批量异步推理（大模型优化）
+            progress_cache[file_id] = {"step": "批量分析军事场景", "progress": 50, "status": "running"}
+            try:  # 新增：单独捕获视频推理异常
+                llava_results = await utils.batch_llava_inference(frames, yolo_results,
+                                                                  EXPERIMENT_CONFIG["llava_model"])
+            except Exception as e:
+                logger.error(f"视频LLaVA推理失败：{e}")
+                # 填充兜底结果
+                llava_results = [{
+                    "ground_type": "草地",
+                    "scene": "草地隐蔽区",
+                    "hide_place": "树林深处",
+                    "soldier_state": "移动",
+                    "risk": "高"
+                } for _ in frames]
+                # 更新进度为失败
+                progress_cache[file_id] = {
+                    "step": f"推理失败：{str(e)[:50]}",
+                    "progress": 50,
+                    "status": "failed",
+                    "error": f"LLaVA推理失败：{str(e)}"
+                }
+                return  # 终止处理
+
+            # 生成帧结果+标注
             frame_results = []
-            for frame in frames:
-                # 帧转base64
-                buffered = io.BytesIO()
-                frame.save(buffered, format="PNG")
-                frame_base64 = base64.b64encode(buffered.getvalue()).decode()
-
-                # 调用LLaVA分析单帧
-                prompt = (
-                    "请分析这一视频帧的环境，并列出以下内容：\n"
-                    "1. 主要地面类型（如草地、水泥地、沙地等）\n"
-                    "2. 主要物体（如墙体、车辆、树木、建筑物等）\n"
-                    "3. 整体场景类型（如城市、野外、森林、军事基地等）\n"
-                    "4. 可能存在的隐蔽位置（如墙角、树林、车辆后方等）\n"
-                    "5. 是否发现穿迷彩服的人员或军事相关装备？\n"
-                    "请用中文回答，尽量简洁明了。"
-                )
-                response = ollama.chat(
-                    model="llava:7b",
-                    messages=[{'role': 'user', 'content': prompt, 'images': [frame_base64]}]
-                )
-                frame_results.append(response['message']['content'])
+            for idx, (frame, yolo_res, llava_res) in enumerate(zip(frames, yolo_results, llava_results)):
+                progress = 50 + (idx / len(frames)) * 30
+                progress_cache[file_id] = {
+                    "step": f"标注帧{idx + 1}/{len(frames)}",
+                    "progress": int(progress),
+                    "status": "running"
+                }
+                # 标注图片
+                annotated_frame = utils.draw_annotation(frame.copy(), yolo_res, llava_res)
+                frame_results.append({
+                    "yolo": yolo_res,
+                    "llava_parsed": llava_res,
+                    "frame": frame,
+                    "annotated_frame": annotated_frame
+                })
 
             # 汇总结果
-            summary = summarize_frame_results(frame_results)
-            return JSONResponse(content={"type": "video", "result": summary})
+            progress_cache[file_id] = {"step": "汇总结果", "progress": 90, "status": "running"}
+            final_summary = utils.summarize_frame_results(frame_results)
+            # 缓存结果（取第一帧标注图作为预览）
+            result_cache[file_id] = {
+                "type": "video",
+                "result": final_summary,
+                "annotated_img": frame_results[0]["annotated_frame"] if frame_results else None,
+                "frame_results": frame_results
+            }
+            # 更新进度
+            progress_cache[file_id] = {"step": "分析完成", "progress": 100, "status": "success"}
 
-        # 3. 不支持的文件类型
+        # ========== 不支持的文件类型 ==========
         else:
-            return JSONResponse(content={"error": "仅支持图片和视频文件"}, status_code=400)
+            progress_cache[file_id] = {
+                "step": "不支持的文件类型",
+                "progress": 0,
+                "status": "failed",
+                "error": f"仅支持jpg/png/mp4/avi/mov，当前文件后缀：{file_ext}"
+            }
 
     except Exception as e:
-        return JSONResponse(content={"error": f"处理失败：{str(e)}"}, status_code=500)
+        logger.error(f"处理文件失败：{e}", exc_info=True)
+        progress_cache[file_id] = {
+            "step": "处理失败",
+            "progress": 0,
+            "status": "failed",
+            "error": str(e)
+        }
+
+# ==================== 核心接口 ====================
+# 根路径：返回前端页面
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
+    try:
+        with open("static/index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except Exception as e:
+        logger.error(f"读取前端页面失败：{e}")
+        return HTMLResponse(content="<h1>页面加载失败，请检查static/index.html是否存在</h1>")
 
 
+# 上传文件：启动异步处理+返回file_id
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    file_data = await file.read()
+    file_id = str(uuid.uuid4())  # 生成唯一文件ID
+    # 启动异步处理
+    asyncio.create_task(process_file_async(file_id, file_data, file.filename or "未知文件"))
+    return JSONResponse(content={
+        "code": 200,
+        "msg": "开始分析，可轮询进度",
+        "file_id": file_id
+    })
+
+
+# 查询进度接口
+@app.get("/progress/{file_id}")
+async def get_progress(file_id: str):
+    return JSONResponse(content=progress_cache.get(file_id, {
+        "step": "未找到任务",
+        "progress": 0,
+        "status": "not_found"
+    }))
+
+
+# 获取分析结果接口
+@app.get("/result/{file_id}")
+async def get_result(file_id: str):
+    if file_id not in result_cache:
+        return JSONResponse(content={"code": 404, "msg": "结果未生成"}, status_code=404)
+    result = result_cache[file_id]
+    # 标注图转Base64（前端预览）
+    annotated_base64 = ""
+    if result.get("annotated_img"):
+        buffered = io.BytesIO()
+        result["annotated_img"].save(buffered, format="PNG")
+        annotated_base64 = base64.b64encode(buffered.getvalue()).decode()
+    return JSONResponse(content={
+        "code": 200,
+        "type": result["type"],
+        "result_text": result["result"],
+        "annotated_img": annotated_base64
+    })
+
+
+# 导出结果接口（支持txt/图片）
+@app.get("/export/{file_id}")
+async def export_result(file_id: str, format: str = "txt"):
+    if file_id not in result_cache:
+        return JSONResponse(content={"code": 404, "msg": "结果未生成"}, status_code=404)
+    result = result_cache[file_id]
+
+    # 导出TXT
+    if format == "txt":
+        return Response(
+            content=result["result"],
+            media_type="text/plain",
+            headers={"Content-Disposition": f"attachment; filename={file_id}_result.txt"}
+        )
+    # 导出标注图片
+    elif format == "image":
+        if not result.get("annotated_img"):
+            return JSONResponse(content={"code": 400, "msg": "无标注图片"}, status_code=400)
+        buffered = io.BytesIO()
+        result["annotated_img"].save(buffered, format="PNG")
+        return Response(
+            content=buffered.getvalue(),
+            media_type="image/png",
+            headers={"Content-Disposition": f"attachment; filename={file_id}_annotated.png"}
+        )
+    else:
+        return JSONResponse(content={"code": 400, "msg": "仅支持txt/image格式"}, status_code=400)
+
+
+# ==================== 启动服务 ====================
 if __name__ == "__main__":
     import uvicorn
 
-    # 改端口（避免8000被占用，用8001）
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8001, log_level="info")
