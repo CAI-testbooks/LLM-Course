@@ -1,0 +1,1 @@
+2026-01-11 21:47:27.926 | ERROR    | src.llm_agent:analyze_data:136 - 数据分析失败: LM must be an instance of `dspy.BaseLM`, not a string. Instead of using a string like 'dspy.configure(lm="openai/gpt-3.5-turbo")', please configure the LM like 'dspy.configure(lm=dspy.LM("openai/gpt-3.5-turbo"))'
