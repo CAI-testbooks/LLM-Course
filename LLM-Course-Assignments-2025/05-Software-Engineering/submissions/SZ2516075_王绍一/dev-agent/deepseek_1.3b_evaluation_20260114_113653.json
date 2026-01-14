@@ -1,0 +1,85 @@
+{
+  "model": "deepseek-ai/deepseek-coder-1.3b-instruct",
+  "model_info": {
+    "simulated": false,
+    "device": "cpu",
+    "quantization": true
+  },
+  "timestamp": "2026-01-14T11:36:53.612659",
+  "stats": {
+    "total_tasks": 3,
+    "successful_tasks": 0,
+    "pass_rate": 0.0,
+    "avg_score": 28.0,
+    "avg_time": 212.89679185549417,
+    "min_score": 28.0,
+    "max_score": 28.0,
+    "difficulty_stats": {
+      "medium": {
+        "total": 2,
+        "successful": 0,
+        "pass_rate": 0.0
+      },
+      "hard": {
+        "total": 1,
+        "successful": 0,
+        "pass_rate": 0.0
+      }
+    },
+    "category_stats": {
+      "web-framework": {
+        "total": 1,
+        "successful": 0,
+        "pass_rate": 0.0
+      },
+      "data-processing": {
+        "total": 1,
+        "successful": 0,
+        "pass_rate": 0.0
+      },
+      "numerical-computing": {
+        "total": 1,
+        "successful": 0,
+        "pass_rate": 0.0
+      }
+    }
+  },
+  "results": [
+    {
+      "task_id": "swe-001",
+      "repo": "django/django",
+      "success": false,
+      "score": 28.0,
+      "solution_preview": "# 解决: \n修复Django的URL反向解析函数中的一个bug。当使用include()包含嵌套的URL模式时，\nreverse()函数无法正确解析深度嵌套的命名空间。例...\n\ndef solution():\n    \"\"\"解决问题的函数\"\"\"\n    # TODO: 实现具体的修复逻辑\n    pass\n\n# 测试代码\ndef test_solution():\n    import sys\n    try:\n        solution()\n        print(\"✅ 解决方案测试通过\")\n        sys.exit(0)\n    except Exception as ...",
+      "test_output": "",
+      "test_error": "NamedTemporaryFile() got an unexpected keyword argument 'delete_on_close'",
+      "time_taken": 213.53376269340515,
+      "difficulty": "medium",
+      "category": "web-framework"
+    },
+    {
+      "task_id": "swe-002",
+      "repo": "pandas-dev/pandas",
+      "success": false,
+      "score": 28.0,
+      "solution_preview": "# 解决: \n修复DataFrame.merge()中的内存泄漏问题。当合并两个大型DataFrame且使用how='outer'时，\n会创建不必要的中间副本，导致内存使用...\n\ndef solution():\n    \"\"\"解决问题的函数\"\"\"\n    # TODO: 实现具体的修复逻辑\n    pass\n\n# 测试代码\ndef test_solution():\n    import sys\n    try:\n        solution()\n        print(\"✅ 解决方案测试通过\")\n        sys.exit(0)\n    except Exception as ...",
+      "test_output": "",
+      "test_error": "NamedTemporaryFile() got an unexpected keyword argument 'delete_on_close'",
+      "time_taken": 211.36463165283203,
+      "difficulty": "hard",
+      "category": "data-processing"
+    },
+    {
+      "task_id": "swe-003",
+      "repo": "numpy/numpy",
+      "success": false,
+      "score": 28.0,
+      "solution_preview": "# 解决: \n修复numpy.linalg.inv()函数中对奇异矩阵的错误处理。当前实现对于奇异矩阵（行列式接近0）会抛出LinAlgError，\n但错误信息不够清晰，也...\n\ndef solution():\n    \"\"\"解决问题的函数\"\"\"\n    # TODO: 实现具体的修复逻辑\n    pass\n\n# 测试代码\ndef test_solution():\n    import sys\n    try:\n        solution()\n        print(\"✅ 解决方案测试通过\")\n        sys.exit(0)\n    except Exception as ...",
+      "test_output": "",
+      "test_error": "NamedTemporaryFile() got an unexpected keyword argument 'delete_on_close'",
+      "time_taken": 213.79198122024536,
+      "difficulty": "medium",
+      "category": "numerical-computing"
+    }
+  ]
+}

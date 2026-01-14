@@ -1,0 +1,60 @@
+{
+  "model": "bigcode/tiny_starcoder_py",
+  "timestamp": "2026-01-14T10:50:36.418400",
+  "stats": {
+    "total_tasks": 3,
+    "successful_tasks": 0,
+    "pass_rate": 0.0,
+    "avg_score": 20.0,
+    "avg_time": 0.0028928120930989585,
+    "min_score": 20.0,
+    "max_score": 20.0
+  },
+  "results": [
+    {
+      "task_id": "swe-001",
+      "repo": "django/django",
+      "success": false,
+      "score": 20.0,
+      "solution_preview": "\ndef reverse(viewname, args=None, kwargs=None):\n    '''修复的reverse函数，正确处理嵌套命名空间'''\n    if viewname == 'app:view_name' and args == [1]:\n        return '/app/view/1/'\n    else:\n        raise ValueError(f...",
+      "test_result": {
+        "success": false,
+        "output": "",
+        "error": "NamedTemporaryFile() got an unexpected keyword argument 'delete_on_close'",
+        "tests_passed": 0,
+        "tests_failed": 0
+      },
+      "time_taken": 0.0019936561584472656
+    },
+    {
+      "task_id": "swe-002",
+      "repo": "pandas-dev/pandas",
+      "success": false,
+      "score": 20.0,
+      "solution_preview": "\nimport pandas as pd\n\ndef merge_dataframes(df1, df2, on_column):\n    '''优化内存使用的merge函数'''\n    # 减少不必要的中间副本\n    result = pd.merge(df1, df2, on=on_column)\n    return result\n",
+      "test_result": {
+        "success": false,
+        "output": "",
+        "error": "NamedTemporaryFile() got an unexpected keyword argument 'delete_on_close'",
+        "tests_passed": 0,
+        "tests_failed": 0
+      },
+      "time_taken": 0.0024962425231933594
+    },
+    {
+      "task_id": "swe-003",
+      "repo": "numpy/numpy",
+      "success": false,
+      "score": 20.0,
+      "solution_preview": "\nimport numpy as np\n\ndef safe_inverse(matrix):\n    '''安全的矩阵求逆，处理奇异矩阵'''\n    try:\n        return np.linalg.inv(matrix)\n    except np.linalg.LinAlgError:\n        # 如果是奇异矩阵，返回伪逆\n        print(\"警告: 矩阵是奇异的...",
+      "test_result": {
+        "success": false,
+        "output": "",
+        "error": "NamedTemporaryFile() got an unexpected keyword argument 'delete_on_close'",
+        "tests_passed": 0,
+        "tests_failed": 0
+      },
+      "time_taken": 0.00418853759765625
+    }
+  ]
+}
