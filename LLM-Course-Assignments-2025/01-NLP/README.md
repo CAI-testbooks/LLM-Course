@@ -6,7 +6,7 @@
 
 - **源代码路径**：https://github.com/Joshua00044444/LLM-Course/tree/feature/NLP-MedicalRAG/LLM-Course-Assignments-2025/01-NLP
 - **选择分支**：feature/NLP-MedicalRAG
-
+- **详细报告下载路径**：/LLM-Course-Assignments-2025/01-NLP/SX2516096-李迎浩-01-NLP.pdf
 ### 复现说明
 
 所有命令在租用的显卡目录下运行即可：`/root/autodl-tmp`
