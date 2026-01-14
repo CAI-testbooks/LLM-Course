@@ -152,7 +152,7 @@ python -m streamlit run Medical-RAG/Medical-RAG.py
 
 **模型替换：**
 
-![模型替换](/LLM-Course-Assignments-2025/01/NLP/Medical-RAG/img/image22.png)
+![模型替换](/LLM-Course-Assignments-2025/01-NLP/Medical-RAG/img/image22.png)
 
 **未微调RAG优化后：**
 
