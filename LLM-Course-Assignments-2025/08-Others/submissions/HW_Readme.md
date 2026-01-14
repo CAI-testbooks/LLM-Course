@@ -26,4 +26,6 @@ numpy<2.0.0
 模型文件可自行下载
 评测、微调、数据相关代码均在链接中，难度不大，极易复现
 
+部分代码由于一些原因暂时选择不公开
+
 bash /root/LLaMA-Factory/chuli/one.sh 启动web界面
