@@ -1,0 +1,161 @@
+[toc]
+
+> 本次LLM课程大作业选择实现多模态大模型的视觉问答，以下是关于实现的迭代步骤以及相关细节叙述
+>
+> 所有的代码实现将在下面这个仓库：
+>
+> [fouen6/Multimodal-for-VQA](https://github.com/fouen6/Multimodal-for-VQA)
+
+
+
+# Multimodal for VQA
+
+> date：2025-12-30
+>
+> Implement functionality：完成环境的搭建以及数据集的下载和相关预处理工作！！！
+
+## 数据集介绍以及预处理
+
+### 下载相关数据
+
+| AI Challenger                                              | COCO                                                         | complex_reasoning_77k.json                                   | detail_23k.json                                              |
+| ---------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| [AI Challenger](https://tianchi.aliyun.com/dataset/145781) | [COCO 2017](http://images.cocodataset.org/zips/train2017.zip) | [complex_reasoning_77k.json](https://huggingface.co/datasets/liuhaotian/LLaVA-Instruct-150K/resolve/main/complex_reasoning_77k.json) | [detail_23k.json](https://huggingface.co/datasets/liuhaotian/LLaVA-Instruct-150K/resolve/main/detail_23k.json) |
+
+在下载完成之后按照 `config.yaml`中的路径存放数据集。
+
+数据下载完毕后，使用 `process_image.py` 进行预处理。
+
+### 数据集处理(process_image.py)
+
+训练集采用阿里数据集（ali）和 COCO 数据集（两个文件）的图文标注数据，预处理任务的核心是将两种格式不一致的原始图文标注 JSON 文件，转换为统一规范的问答式标注数据和图像信息映射数据，最终合并所有数据集结果并保存为新的 JSON 文件，为后续多模态模型（图文问答）提供可直接使用的规整数据。
+
+1. **配置与数据读取**：先通过`yaml`读取`config.yaml`配置文件，获取所有输入（阿里 / COCO 标注文件路径、图像存储路径）和输出文件路径；再通过封装的`read_json`函数，分别读取阿里数据集和两个 COCO 数据集的原始 JSON 标注数据。
+2. 分数据集标准化处理：
+   - 调用`process_ali`函数处理阿里数据集：兼容灵活的字段格式（支持`image_id`/`image`、`caption`/`conversations`字段），对多标注列表随机选一句，再 50% 概率随机切换两种提问模板，生成统一格式问答对，并建立图像名与图像信息（ID、路径）的映射，ID 从 0 开始。
+   - 调用`process_coco`函数依次处理两个 COCO 数据集：针对固定对话式标注格式，提取问题和答案，将问题中的`<image>`占位符统一替换为`<|extra_0|>`，答案封装为列表格式；通过递增`start_ID`（基于前序数据集的图像数量）保证 ID 全局唯一，同时生成对应图像信息映射。
+3. **数据合并与保存**：使用字典解包语法合并三个数据集的图像信息映射和问答标注数据，打印各数据集及总数据规模；最后将合并后的两类数据分别以 UTF-8 编码、格式化输出的方式保存为指定的 JSON 文件，完成整个预处理流程。
+
+
+
+> date：2025-12-31
+>
+> 因为做的主要是图文理解图像问答相关的多模态大模型，所以整体流程就是：图像输入→视觉特征提取→图文融合建模→文本生成。
+>
+> 目前实现视觉特征的提取。继承并封装预训练的 SigLIP 模型，通过提取（最后一层隐藏状态序列）作为图像特征输出。
+
+
+
+
+
+## 视觉特征提取
+
+具体代码在`./visual/SIGLIP_VIT.py`
+
+- 调用 SigLIP 模型的视觉分支（`self.vision_model`），传入预处理后的图像像素张量，执行视觉模型前向传播；
+- 舍弃 SigLIP 视觉模型的其他输出，仅提取`last_hidden_state`（最后一层隐藏状态序列）作为图像特征输出（该特征包含图像的局部细节与全局语义信息，是多模态融合的最优视觉表征）；
+- 直接返回张量格式的隐藏状态，而非父类的字典格式输出，简化后续多模态模型的特征接收与处理流程。
+
+
+
+
+
+
+
+## 图文融合建模
+
+> date：2025-1- 4
+>
+> 因为做的主要是图文理解图像问答相关的多模态大模型，所以整体流程就是：图像输入→视觉特征提取→图文融合建模→文本生成。
+>
+> 之前已经完成了视觉特征的提取，这次完成了图文融合建模、大语言模型和视觉大模型的结合封装、完成了图文配对数据集的加载、train代码的流程
+
+具体代码在`./qwen/Mqwen.py`
+
+基于 **Hugging Face Transformers 框架**和 **Qwen（通义千问）模型**，实现了一个**支持图文输入的多模态版本 Qwen 模型**，核心是将图像特征嵌入到原始文本语言模型的输入中，使原本仅支持文本的 Qwen 模型具备处理图文混合输入的能力，最终仍以自回归方式生成文本输出。
+
+主要步骤就是：
+
+- 第一步：通过 Qwen 原始的词嵌入层`self.wte`将清理后的`input_ids`转换为文本嵌入`hidden_states`
+- 第二步：核心图文融合 —— 在原本图像占位 token 的位置，插入对应的图像特征`images[b_idx]`，形成「文本 - 图像 - 文本」的混合嵌入序列，这是让语言模型理解图像的关键
+
+然后就是实现大语言模型和视觉大模型的结合封装。具体代码在`./model/model.py`
+
+这段代码实现了一个**端到端的图文多模态大语言模型封装（`MMultiModal`）**，核心是将视觉编码器（SIGLIP-VIT）与扩展后的语言模型 通过特征投影层结合，最终支持图文输入的文本生成。
+
+完成了图文配对数据集的加载，具体代码在`./dataset/image_caption_dataset.py`
+
+实现了一个**图文配对的图像描述 / 图文问答数据集（`ImageCaptionDataset`）**，核心功能是加载图像文件与对应的文本标注（问题 / 答案），完成图像预处理、文本 token 化、数据格式化，最终为多模态模型（前文的`MMultiModal`）提供符合训练要求的批量数据，同时包含自定义数据拼接（collate）逻辑。
+
+train代码的流程具体代码在`./train.py`
+
+通过在冻结视觉模型和 LLM 主体权重的前提下，仅微调 LoRA 层和特征投影层，完成图文生成任务的模型训练。
+
+
+
+
+
+## 图像问答测试
+
+> date：2025-1- 10
+>
+> 因为做的主要是图文理解图像问答相关的多模态大模型，所以整体流程就是：图像输入→视觉特征提取→图文融合建模→文本生成。
+>
+> 经过训练得到的权重进行图像问答测试
+
+使用微调训练得到的权重进行图文问答测试，得到如下的结果。
+
+可使用`./webUI.py`进行GUI交互问答测试
+
+这里提供模型的权重供测试：
+
+使用通过网盘分享的文件：checkpoint-36000.zip
+链接: https://pan.baidu.com/s/1YVyuO2A4YgwciVn9rAxuYA?pwd=fr7n 提取码: fr7n
+
+![image-20260110202400987](https://gitee.com/fouen/image/raw/master/image/20260110202402862.png)
+
+
+
+# 整体模型架构说明
+
+![image-20260112131809950](https://gitee.com/fouen/image/raw/master/image/20260112131810302.png)
+
+```bash
+【输入层】
+├─ 视觉输入: torch.Tensor (batch_size, 3, H, W) → RGB图像像素值
+└─ 文本输入: torch.LongTensor (batch_size, seq_len) → token化后的文本input_ids + labels(监督标签)
+
+【第一大模块：视觉特征提取分支 (只读不训练，梯度冻结)】
+→ SIGLIP-ViT 视觉编码器 (visualModel from visual.SIGLIP_VIT)
+   ├─ 核心行为：self.visualModel.get_image_features(pixel_values=image)
+   ├─ 关键细节：返回特征切片取 [:,1:, :] → 丢弃<CLS> [只保留图像patch特征]
+   ├─ 梯度策略：with torch.no_grad() + image_feature.detach() → 视觉模型全程冻结、不参与训练、不更新权重
+   ├─ 数据类型：强制转换为 torch.bfloat16 做推理加速，无精度损失
+   └─ 输出维度：(batch_size, image_context_length, Vhidden_dim) → 代码中设置的是 image_context_length=728
+
+【第二大模块：视觉特征投影对齐层 (可训练，独立权重，手动初始化)】
+→ 特征投影网络 self.feature_proj (nn.Sequential 双层线性+激活)
+   ├─ make_feature_proj 函数：
+      ✔ Linear(Vhidden_dim → Lhidden_dim) → GELU激活 → Linear(Lhidden_dim → Lhidden_dim)
+   ├─ 初始化策略：自定义正态初始化(weight: N(0,0.01)) + 偏置置零(bias: zero)
+   ├─ 核心作用：视觉特征维度对齐，把视觉编码器的输出维度 映射到 LLM的隐藏层维度
+   ├─ assert MMconfig.image_feature_hidden_size == self.LLM.config.hidden_size
+   └─ 输出维度：(batch_size, 728, Lhidden_dim) → 与LLM的token embedding维度完全一致
+
+【第三大模块：语言模型核心分支 (支持LoRA微调，核心计算层)】
+→ 选择MQWen大语言模型
+   ├─ 训练策略：
+      ✔ 梯度检查点：self.LLM.gradient_checkpointing_enable() → 节省显存
+      ✔ LoRA高效微调：make_lora() → 基于peft库，只训练attention相关模块，冻结LLM主干
+      ✔ dtype：统一使用 torch.bfloat16 精度训练/推理
+   ├─ 核心输入：文本input_ids + 对齐后的视觉特征image_feature (图文融合注入)
+   └─ 模型类型：因果语言模型(Causal LM) → 自回归生成，只预测下一个token
+
+【输出层】
+├─ 训练阶段：返回 CausalLMOutputWithPast → 包含loss、logits、past_key_values等完整输出
+└─ 推理阶段：generate函数返回 自回归生成的文本token序列 → 截取有效生成内容 [:, len(input_ids[0]):-1]
+
+【整体数据流程走向】
+图像 → SIGLIP-ViT提取特征 → 丢弃CLS → feature_proj维度对齐 → 注入MQWen LLM → 图文联合自回归生成/训练
+```
+
