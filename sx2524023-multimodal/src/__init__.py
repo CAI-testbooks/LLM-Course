@@ -1,1 +1,0 @@
-# mm-vision-language-assistant
