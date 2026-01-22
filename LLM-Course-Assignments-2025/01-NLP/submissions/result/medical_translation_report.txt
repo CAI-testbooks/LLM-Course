@@ -1,0 +1,308 @@
+===== 医学问题翻译测试报告 =====
+测试时间：2025-12-06 17:02:00
+总调用次数：50
+成功数：50（100.0%） | 失败数：0（0.0%） | 异常数：0（0.0%）
+总耗时：12.770秒 | 平均响应时间：0.255秒 | 最快：0.144秒 | 最慢：0.827秒
+
+===== 详细翻译结果 =====
+
+第1个：
+中文：糖尿病的早期症状有哪些？
+英文：What are the early symptoms of diabetes?
+状态：成功 | 响应时间：0.251秒
+------------------------------------------------------------
+
+第2个：
+中文：高血压患者适合吃哪些食物？
+英文：What foods are suitable for hypertensive patients to eat?
+状态：成功 | 响应时间：0.302秒
+------------------------------------------------------------
+
+第3个：
+中文：肺癌的常见治疗方法包括哪些？
+英文：What are the common treatment methods for lung cancer?
+状态：成功 | 响应时间：0.300秒
+------------------------------------------------------------
+
+第4个：
+中文：持续咳嗽超过2周可能是什么原因？
+英文：What could be the reason for persistent coughing for more than 2 weeks?
+状态：成功 | 响应时间：0.201秒
+------------------------------------------------------------
+
+第5个：
+中文：布洛芬的副作用有哪些？
+英文：What are the side effects of ibuprofen?
+状态：成功 | 响应时间：0.250秒
+------------------------------------------------------------
+
+第6个：
+中文：孕妇能否接种流感疫苗？
+英文：Can pregnant women receive the flu vaccine?
+状态：成功 | 响应时间：0.240秒
+------------------------------------------------------------
+
+第7个：
+中文：冠心病和心绞痛的区别是什么？
+英文：What is the difference between coronary heart disease and angina pectoris?
+状态：成功 | 响应时间：0.190秒
+------------------------------------------------------------
+
+第8个：
+中文：如何预防儿童过敏性鼻炎发作？
+英文：How to prevent the onset of allergic rhinitis in children?
+状态：成功 | 响应时间：0.223秒
+------------------------------------------------------------
+
+第9个：
+中文：慢性肾病患者需要限制哪些营养素？
+英文：What nutrients should chronic kidney disease patients limit?
+状态：成功 | 响应时间：0.249秒
+------------------------------------------------------------
+
+第10个：
+中文：阿莫西林和头孢类抗生素的适用范围有何不同？
+英文：What are the differences in the scope of application between amoxicillin and cephalosporin antibiotics?
+状态：成功 | 响应时间：0.253秒
+------------------------------------------------------------
+
+第11个：
+中文：偏头痛发作时该如何缓解疼痛？
+英文：How to relieve pain during migraine attacks?
+状态：成功 | 响应时间：0.267秒
+------------------------------------------------------------
+
+第12个：
+中文：胃癌的高危因素包括哪些？
+英文：What are the high-risk factors for gastric cancer?
+状态：成功 | 响应时间：0.148秒
+------------------------------------------------------------
+
+第13个：
+中文：乙肝疫苗的接种程序是怎样的？
+英文：What is the vaccination procedure of hepatitis B vaccine?
+状态：成功 | 响应时间：0.225秒
+------------------------------------------------------------
+
+第14个：
+中文：骨质疏松患者需要补充哪些维生素？
+英文：What vitamins do osteoporosis patients need to supplement?
+状态：成功 | 响应时间：0.219秒
+------------------------------------------------------------
+
+第15个：
+中文：过敏性休克的急救措施有哪些？
+英文：What are the emergency measures for anaphylactic shock?
+状态：成功 | 响应时间：0.195秒
+------------------------------------------------------------
+
+第16个：
+中文：甲状腺功能亢进会导致哪些症状？
+英文：What symptoms can hyperthyroidism cause?
+状态：成功 | 响应时间：0.184秒
+------------------------------------------------------------
+
+第17个：
+中文：肺炎支原体感染的治疗周期是多久？
+英文：What is the treatment cycle for Mycoplasma pneumoniae infection?
+状态：成功 | 响应时间：0.275秒
+------------------------------------------------------------
+
+第18个：
+中文：痛风患者应避免食用哪些高嘌呤食物？
+英文：What high purine foods should gout patients avoid consuming?
+状态：成功 | 响应时间：0.206秒
+------------------------------------------------------------
+
+第19个：
+中文：脑梗死的康复训练方法有哪些？
+英文：What are the rehabilitation training methods for cerebral infarction?
+状态：成功 | 响应时间：0.827秒
+------------------------------------------------------------
+
+第20个：
+中文：哺乳期女性可以使用哪些退烧药？
+英文：What fever reducing drugs can breastfeeding women use?
+状态：成功 | 响应时间：0.158秒
+------------------------------------------------------------
+
+第21个：
+中文：慢性胃炎的病因是什么？
+英文：What are the causes of chronic gastritis?
+状态：成功 | 响应时间：0.171秒
+------------------------------------------------------------
+
+第22个：
+中文：儿童发烧到多少度需要服用退烧药？
+英文：How high does a child's fever reach and need to take antipyretics?
+状态：成功 | 响应时间：0.192秒
+------------------------------------------------------------
+
+第23个：
+中文：类风湿关节炎的诊断标准是什么？
+英文：What are the diagnostic criteria for rheumatoid arthritis?
+状态：成功 | 响应时间：0.219秒
+------------------------------------------------------------
+
+第24个：
+中文：如何正确使用吸入式糖皮质激素治疗哮喘？
+英文：How to use inhaled corticosteroids correctly to treat asthma?
+状态：成功 | 响应时间：0.243秒
+------------------------------------------------------------
+
+第25个：
+中文：胰腺癌的早期筛查方法有哪些？
+英文：What are the early screening methods for pancreatic cancer?
+状态：成功 | 响应时间：0.216秒
+------------------------------------------------------------
+
+第26个：
+中文：贫血患者的血常规检查会有哪些异常？
+英文：What are the abnormalities in the blood routine examination of anemic patients?
+状态：成功 | 响应时间：0.262秒
+------------------------------------------------------------
+
+第27个：
+中文：带状疱疹的并发症有哪些？
+英文：What are the complications of herpes zoster?
+状态：成功 | 响应时间：0.206秒
+------------------------------------------------------------
+
+第28个：
+中文：高血压合并糖尿病患者的血压控制目标是多少？
+英文：What is the goal of blood pressure control in hypertension patients with diabetes?
+状态：成功 | 响应时间：0.236秒
+------------------------------------------------------------
+
+第29个：
+中文：左氧氟沙星的禁忌人群有哪些？
+英文：What are the contraindications for levofloxacin?
+状态：成功 | 响应时间：0.177秒
+------------------------------------------------------------
+
+第30个：
+中文：阿尔茨海默病的临床症状分期是什么？
+英文：What are the clinical symptom stages of Alzheimer's disease?
+状态：成功 | 响应时间：0.238秒
+------------------------------------------------------------
+
+第31个：
+中文：急性肠胃炎的补液原则是什么？
+英文：What are the principles of fluid replacement for acute gastroenteritis?
+状态：成功 | 响应时间：0.211秒
+------------------------------------------------------------
+
+第32个：
+中文：青少年近视防控的有效措施有哪些？
+英文：What are the effective measures for preventing and controlling myopia in adolescents?
+状态：成功 | 响应时间：0.281秒
+------------------------------------------------------------
+
+第33个：
+中文：系统性红斑狼疮的治疗药物有哪些？
+英文：What are the therapeutic drugs for systemic lupus erythematosus?
+状态：成功 | 响应时间：0.256秒
+------------------------------------------------------------
+
+第34个：
+中文：孕妇缺铁性贫血该如何补充铁剂？
+英文：How to supplement iron supplements for pregnant women with iron deficiency anemia?
+状态：成功 | 响应时间：0.235秒
+------------------------------------------------------------
+
+第35个：
+中文：慢性阻塞性肺疾病的分级标准是什么？
+英文：What are the grading criteria for chronic obstructive pulmonary disease?
+状态：成功 | 响应时间：0.250秒
+------------------------------------------------------------
+
+第36个：
+中文：甲硝唑的服用注意事项有哪些？
+英文：What are the precautions for taking metronidazole?
+状态：成功 | 响应时间：0.298秒
+------------------------------------------------------------
+
+第37个：
+中文：卵巢囊肿的良恶性鉴别方法有哪些？
+英文：What are the methods for distinguishing between benign and malignant ovarian cysts?
+状态：成功 | 响应时间：0.159秒
+------------------------------------------------------------
+
+第38个：
+中文：运动后肌肉酸痛该如何缓解？
+英文：How to relieve muscle soreness after exercise?
+状态：成功 | 响应时间：0.205秒
+------------------------------------------------------------
+
+第39个：
+中文：慢性肝炎患者需要定期检查哪些项目？
+英文：What items do chronic hepatitis patients need regular check ups for?
+状态：成功 | 响应时间：0.224秒
+------------------------------------------------------------
+
+第40个：
+中文：儿童湿疹的护理要点是什么？
+英文：What are the key nursing points for children with eczema?
+状态：成功 | 响应时间：0.262秒
+------------------------------------------------------------
+
+第41个：
+中文：前列腺增生的手术治疗指征有哪些？
+英文：What are the indications for surgical treatment of benign prostatic hyperplasia?
+状态：成功 | 响应时间：0.288秒
+------------------------------------------------------------
+
+第42个：
+中文：头孢类药物过敏者可以使用阿奇霉素吗？
+英文：Can individuals allergic to cephalosporin drugs use azithromycin?
+状态：成功 | 响应时间：0.464秒
+------------------------------------------------------------
+
+第43个：
+中文：抑郁症的药物治疗和心理治疗哪个更有效？
+英文：Which is more effective between medication and psychotherapy for depression?
+状态：成功 | 响应时间：0.282秒
+------------------------------------------------------------
+
+第44个：
+中文：如何预防老年人跌倒？
+英文：How to prevent falls in the elderly?
+状态：成功 | 响应时间：0.227秒
+------------------------------------------------------------
+
+第45个：
+中文：急性胰腺炎的诱因有哪些？
+英文：What are the causes of acute pancreatitis?
+状态：成功 | 响应时间：0.218秒
+------------------------------------------------------------
+
+第46个：
+中文：过敏性结膜炎的治疗药物有哪些？
+英文：What are the treatment drugs for allergic conjunctivitis?
+状态：成功 | 响应时间：0.237秒
+------------------------------------------------------------
+
+第47个：
+中文：慢性前列腺炎的症状有哪些？
+英文：What are the symptoms of chronic prostatitis?
+状态：成功 | 响应时间：0.144秒
+------------------------------------------------------------
+
+第48个：
+中文：孕妇晚期水肿该如何缓解？
+英文：How to relieve late stage edema in pregnant women?
+状态：成功 | 响应时间：0.673秒
+------------------------------------------------------------
+
+第49个：
+中文：淋巴瘤的病理分型有哪些？
+英文：What are the pathological types of lymphoma?
+状态：成功 | 响应时间：0.253秒
+------------------------------------------------------------
+
+第50个：
+中文：长期服用阿司匹林需要注意什么？
+英文：What should be noted when taking aspirin for a long time?
+状态：成功 | 响应时间：0.281秒
+------------------------------------------------------------
+
