@@ -1,0 +1,59 @@
+# config.yaml
+project:
+  name: "dev-agent"
+  version: "1.0.0"
+  author: "Your Name"
+
+models:
+  default: "tiny-starcoder"  # 默认使用1.3B模型
+  options:
+    # 超小模型 - 200MB
+    tiny-starcoder:
+      name: "bigcode/tiny_starcoder_py"
+      type: "huggingface"
+      max_tokens: 512
+      size_gb: 0.2
+    
+    # 小模型 - 2.7GB
+    deepseek-coder-1.3b:
+      name: "deepseek-ai/deepseek-coder-1.3b-instruct"
+      type: "huggingface"
+      max_tokens: 2048
+      size_gb: 2.7
+    
+    # 中模型 - 14GB
+    deepseek-coder-6.7b:
+      name: "deepseek-ai/deepseek-coder-6.7b-instruct"
+      type: "huggingface"
+      max_tokens: 4096
+      size_gb: 14
+    
+    # 模拟模型 - 0GB
+    simulated-model:
+      name: "simulated"
+      type: "simulated"
+      max_tokens: 1024
+      size_gb: 0
+
+datasets:
+  humaneval:
+    path: "./data/humaneval"
+    download: true
+  
+  mbpp:
+    path: "./data/mbpp"
+    download: true
+  
+  swebench:
+    path: "./data/swebench"
+    download: true
+
+generation:
+  temperature: 0.7
+  top_p: 0.95
+  max_length: 2048
+  do_sample: true
+
+evaluation:
+  swebench_instances: 50  # 限制评估数量
+  timeout: 30  # 秒
