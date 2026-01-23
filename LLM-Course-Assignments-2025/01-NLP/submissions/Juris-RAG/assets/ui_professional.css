@@ -1,0 +1,282 @@
+/* Juris-RAG 法律智能问答系统 - 专业版 UI 样式 */
+
+:root {
+  /* 品牌色 - 法律蓝青色 */
+  --primary-50: #f0f9ff;
+  --primary-100: #e0f2fe;
+  --primary-500: #0ea5e9;
+  --primary-600: #0284c7;
+  --primary-700: #0369a1; /* 深蓝主色 */
+  --primary-800: #075985;
+  --primary-900: #0c4a6e;
+  
+  --accent: #f59e0b; /* 金色/橙色作为强调 */
+
+  /* 背景系统 */
+  --bg-body: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-panel: #f1f5f9;
+  
+  /* 文本系统 */
+  --text-main: #1e293b;
+  --text-sub: #475569;
+  --text-light: #94a3b8;
+  
+  /* 边框与阴影 */
+  --border-color: #cbd5e1;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  
+  --radius: 8px;
+}
+
+/* 全局重置与基础样式 */
+body {
+  background-color: var(--bg-body) !important;
+  color: var(--text-main) !important;
+}
+
+.gradio-container {
+  max-width: 1600px !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+}
+
+/* === 顶部 Header === */
+#app-header {
+    background: linear-gradient(135deg, var(--primary-900) 0%, var(--primary-700) 100%);
+    color: white;
+    padding: 1.5rem 2rem;
+    border-radius: 0 0 16px 16px;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-md);
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+#app-header .logo {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+#app-header .logo-icon {
+    opacity: 0.9;
+}
+
+#app-header .subtitle {
+    opacity: 0.8;
+    font-size: 1rem;
+    margin-top: 0.25rem;
+    font-weight: 400;
+}
+
+/* === 布局容器 === */
+.main-layout {
+    gap: 24px;
+    padding: 0 20px 40px 20px;
+}
+
+/* === 左侧边栏 === */
+#sidebar {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px !important;
+    box-shadow: var(--shadow-sm);
+    height: fit-content;
+}
+
+#nav-radio label {
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    transition: all 0.2s;
+}
+
+#nav-radio label.selected {
+    background-color: var(--primary-50);
+    border-color: var(--primary-600);
+    color: var(--primary-800);
+    font-weight: 600;
+}
+
+#new-chat {
+    background-color: var(--primary-700) !important;
+    border: none !important;
+    color: white !important;
+    font-weight: 600;
+    margin-top: 1rem;
+    box-shadow: var(--shadow-sm);
+}
+
+#new-chat:hover {
+    background-color: var(--primary-800) !important;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+}
+
+/* === 右侧主区域 === */
+#chat-group, #search-group, #info-group {
+    background: var(--bg-card);
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+    padding: 24px;
+    min-height: 600px;
+}
+
+/* === 聊天机器人 === */
+#chatbot {
+    height: 600px !important;
+    border: none !important;
+    background: transparent !important;
+}
+
+/* 消息气泡 */
+.message-row.user-row .message {
+    background: var(--primary-100) !important;
+    color: var(--primary-900) !important;
+    border-radius: 16px 16px 4px 16px !important;
+    border: none !important;
+}
+
+.message-row.bot-row .message {
+    background: var(--bg-panel) !important;
+    color: var(--text-main) !important;
+    border-radius: 16px 16px 16px 4px !important;
+    border: 1px solid var(--border-color) !important;
+    box-shadow: var(--shadow-sm);
+}
+
+/* 输入区域 */
+#composer {
+    background: var(--bg-card);
+    border-top: 1px solid var(--border-color);
+    padding-top: 16px;
+    margin-top: 16px;
+    align-items: flex-end;
+}
+
+#chat-input textarea {
+    border: 2px solid var(--border-color) !important;
+    border-radius: 12px !important;
+    padding: 12px 16px !important;
+    font-size: 1rem;
+    background: var(--bg-body) !important;
+    transition: border-color 0.2s;
+}
+
+#chat-input textarea:focus {
+    border-color: var(--primary-600) !important;
+    background: white !important;
+    box-shadow: 0 0 0 3px var(--primary-100);
+}
+
+/* === 右侧信息面板 (引用/置信度) === */
+#side-panel {
+    background: var(--bg-panel);
+    border-radius: 12px;
+    padding: 16px !important;
+    border: 1px solid var(--border-color);
+    height: 100%;
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    color: var(--primary-800);
+    font-weight: 600;
+    font-size: 1.1rem;
+    border-bottom: 2px solid var(--primary-100);
+    padding-bottom: 8px;
+}
+
+.citation-box {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 0.9rem;
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+}
+
+.citation-box strong {
+    color: var(--primary-700);
+}
+
+.confidence-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 16px;
+}
+
+.confidence-high {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.confidence-medium {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+}
+
+.confidence-low {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+
+/* === 示例问题 === */
+#example-questions {
+    margin-top: 20px;
+}
+
+#example-questions button {
+    background: white !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--text-sub) !important;
+    border-radius: 20px !important;
+    font-size: 0.9rem !important;
+    transition: all 0.2s;
+    margin-right: 8px;
+    margin-bottom: 8px;
+}
+
+#example-questions button:hover {
+    border-color: var(--primary-500) !important;
+    color: var(--primary-600) !important;
+    background: var(--primary-50) !important;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}

@@ -1,0 +1,328 @@
+Windows PowerShell
+版权所有 (C) Microsoft Corporation。保留所有权利。
+
+尝试新的跨平台 PowerShell https://aka.ms/pscore6
+
+[PyCharm] 您的 PSReadLine 模块版本(2.0.0)已过时，这可能会导致终端屏幕出现黑线的问题:
+https://learn.microsoft.com/windows/terminal/troubleshooting#black-lines-in-powershell-51-6x-70
+通过运行以下命令安装最新版本: 'Install-Module PSReadLine -MinimumVersion 2.0.3 -Scope CurrentUser -Force'
+安装完成后，打开一个新的终端标签页。
+
+(.venv) PS E:\1__xubin_hu\Program and setting\python program\Trae test> $env:DASHSCOPE_API_KEY="------------------------"
+(.venv) PS E:\1__xubin_hu\Program and setting\python program\Trae test> $env:ALIBABA_CLOUD_REGION="cn-beijing"
+(.venv) PS E:\1__xubin_hu\Program and setting\python program\Trae test> python demo_qwen.py
+================================================================================
+心理健康问答RAG系统演示
+================================================================================
+正在初始化RAG系统...
+INFO:rag_system_qwen:使用阿里云区域: cn-beijing
+INFO:rag_system_qwen:使用阿里云通义千问模型: qwen-turbo
+INFO:rag_system_qwen:组件初始化完成
+正在加载和处理数据...
+INFO:rag_system_qwen:加载了 5016 条原始数据
+INFO:rag_system_qwen:成功处理了 5016 条记录
+正在构建向量数据库...
+INFO:rag_system_qwen:【INIT】进入 init_vectorstore
+INFO:rag_system_qwen:【INIT】检测到已有向量数据库，直接加载
+INFO:faiss.loader:Loading faiss with AVX512 support.
+INFO:faiss.loader:Could not load library with AVX512 support due to:
+ModuleNotFoundError("No module named 'faiss.swigfaiss_avx512'")
+INFO:faiss.loader:Loading faiss with AVX2 support.
+INFO:faiss.loader:Successfully loaded faiss with AVX2 support.
+init_vectorstore 返回值: True
+
+系统统计信息:
+  total_records: 5016
+  total_chunks: 22721
+  avg_chunks_per_record: 4.529704944178628
+  chunk_size: 500
+  chunk_overlap: 100
+  retrieval_config: {'title_weight': 0.5, 'question_weight': 0.35, 'answer_weight': 0.15}
+  embedding_model: text-embedding-v1
+  llm_model: qwen-turbo
+  using_alibaba_cloud: True
+
+================================================================================
+开始查询演示
+================================================================================
+
+示例查询 1: 心理健康问题的症状有哪些？
+--------------------------------------------------
+INFO:rag_system_qwen:原始查询: 心理健康问题的症状有哪些？
+INFO:rag_system_qwen:重写结果: {'original_query': '心理健康问题的症状有哪些？', 'sub_queries': [{'text': '心理健康问题的常见症状', 'weight': 0.8}, {'text': '心理疾病的表现形式', 'weight': 0.2}]}
+INFO:rag_system_qwen:翻译成功：心理健康问题的症状有哪些？ -> What are the symptoms of mental health issues?
+INFO:rag_system_qwen:翻译成功：心理健康问题的常见症状 -> Common symptoms of mental health issues
+INFO:rag_system_qwen:翻译成功：心理疾病的表现形式 -> Manifestations of mental illness
+找到 5 个相关结果:
+  结果 1 (相似度: 11.610):
+    问题: What are some of the warning signs of mental illness?
+    问题文本:
+    回答预览: Symptoms of mental disorders vary depending on the type and severity of the condition. Some general ...
+  结果 2 (相似度: 10.793):
+    问题: What are some of the warning signs of mental illness?
+    问题文本:
+    回答预览: Symptoms of mental health disorders vary depending on the type and severity of the condition....
+  结果 3 (相似度: 7.476):
+    问题: What Are the Symptoms of Psychotic Depression?
+    问题文本:
+    回答预览: 1. Anxiety -- fear and nervousness 2. Agitation 3. Paranoia 4. Insomnia -- difficulty falling and st...
+  结果 4 (相似度: 6.566):
+    问题: What causes mental health problems?
+    问题文本:
+    回答预览: Challenges or problems with your mental health can arise from psychological, biological, and social,...
+  结果 5 (相似度: 5.151):
+    问题: Are mental health problems common?
+    问题文本:
+    回答预览: Mental health problems are common. Approximately one in five Canadians will experience a mental heal...
+
+  生成的回答:
+INFO:rag_system_qwen:原始查询: 心理健康问题的症状有哪些？
+INFO:rag_system_qwen:重写结果: {'original_query': '心理健康问题的症状有哪些？', 'sub_queries': [{'text': '心理健康问题的常见症状', 'weight': 0.7}, {'text': '心理疾病的表现形式', 'weight': 0.3}]}
+INFO:rag_system_qwen:翻译成功：心理健康问题的症状有哪些？ -> What are the symptoms of mental health issues?
+INFO:rag_system_qwen:翻译成功：心理健康问题的常见症状 -> Common symptoms of mental health issues
+INFO:rag_system_qwen:翻译成功：心理疾病的表现形式 -> Manifestations of mental illness
+  根据上下文信息，心理健康问题的症状可能包括以下一些表现：
+
+- 注意力难以集中
+- 长期的悲伤或易怒
+- 能量水平的反复变化
+- 极端的高情绪或低情绪
+- 过度的恐惧、担忧或焦虑
+- 社交退缩
+- 饮食或睡眠习惯的显著变化
+- 强烈的愤怒感
+- 妄想或幻觉（看到或听到不存在的事物）
+- 无法应对日常问题和活动
+- 自杀念头
+- 大量未解释的身体问题
+- 思维混乱
+- 药物和/或酒精的滥用
+
+这些症状可能因具体的心理健康问题类型和严重程度而有所不同。如果你或你认识的人出现这些症状，建议寻求专业的心理健康帮助。
+
+============================================================
+
+示例查询 2: 抑郁症的治疗方法是什么？
+--------------------------------------------------
+INFO:rag_system_qwen:原始查询: 抑郁症的治疗方法是什么？
+INFO:rag_system_qwen:重写结果: {'original_query': '抑郁症的治疗方法是什么？', 'sub_queries': [{'text': '抑郁症的治疗方法', 'weight': 1.0}]}
+INFO:rag_system_qwen:翻译成功：抑郁症的治疗方法是什么？ -> What are the treatments for depression?
+INFO:rag_system_qwen:翻译成功：抑郁症的治疗方法 -> Treatment for Depression
+找到 5 个相关结果:
+  结果 1 (相似度: 10.132):
+    问题: How Is Depression Treated?
+    问题文本:
+    回答预览: The most common treatment for depression includes the combination of antidepressant drugs, including...
+  结果 2 (相似度: 6.522):
+    问题: How Can Treatment-Resistant Depression Be Treated?
+    问题文本:
+    回答预览: Treatment of resistant depression has most commonly been treated with electroconvulsive therapy (ECT...
+  结果 3 (相似度: 2.150):
+    问题:
+    问题文本: I'm almost never happy. Half of the time, I don't feel anything. I find it easy to make myself feel
+    回答预览: Hi Loyal, This is a common question. I suggest that you not diagnose yourself (only a physician can ...
+  结果 4 (相似度: 2.150):
+    问题: How do I know if I have depression?
+    问题文本: I'm almost never happy. Half of the time, I don't feel anything. I find it easy to make myself feel
+    回答预览: Hi Loyal, This is a common question. I suggest that you not diagnose yourself (only a physician can ...
+  结果 5 (相似度: 1.859):
+    问题:
+    问题文本: I have been dealing with depression and anxiety for a number of years. I have been on medication, bu
+    回答预览: Thank you for asking this important question. I find that there are three steps to getting ready for...
+
+  生成的回答:
+INFO:rag_system_qwen:原始查询: 抑郁症的治疗方法是什么？
+INFO:rag_system_qwen:重写结果: {'original_query': '抑郁症的治疗方法是什么？', 'sub_queries': [{'text': '抑郁症的治疗方法', 'weight': 1.0}]}
+INFO:rag_system_qwen:翻译成功：抑郁症的治疗方法是什么？ -> What are the treatments for depression?
+INFO:rag_system_qwen:翻译成功：抑郁症的治疗方法 -> Treatment for Depression
+  抑郁症的治疗方法通常包括以下几种：
+
+1. **药物治疗**：常用的药物包括抗抑郁药，如选择性5-羟色胺再摄取抑制剂（SSRIs）、5-羟色胺和去甲肾上腺素再摄取抑制剂（SNRIs）以及三环类抗抑郁药。在某些情况下，可能会使用非典型抗精神病药物或锂盐等情绪稳定剂来辅助治疗。
+
+2. **心理治疗**：也称为“谈话治疗”，包括认知行为疗法（CBT）、行为激活疗法等，这些方法已被证明可以有效减轻抑郁症的症状。心理治疗可以帮助患者探索抑郁的根源，并建立应对技能。
+
+3. **脑刺激疗法**：对于严重且对其他治疗无效的抑郁症，可能会采用电休克疗法（ECT）、鼻腔喷雾式氯胺酮或经颅磁刺激（TMS）等方法。
+
+4. **综合治疗**：研究表明，药物治疗与心理治疗结合使用效果最佳。
+
+如果你怀疑自己可能患有抑郁症，建议尽快咨询专业医生或心理健康专家以获得准确的诊断和个性化的治疗方案。你并不孤单，抑郁症是...
+
+============================================================
+
+示例查询 3: 我幼年被陌生人强暴，导致我无法信任他人，现在也无法跟妻子有正常的性生活
+--------------------------------------------------
+INFO:rag_system_qwen:原始查询: 我幼年被陌生人强暴，导致我无法信任他人，现在也无法跟妻子有正常的性生活
+INFO:rag_system_qwen:重写结果: {'original_query': '我幼年被陌生人强暴，导致我无法信任他人，现在也无法跟妻子有正常的性生活', 'sub_queries': [{'text': '幼年被陌生人强暴', 'weight': 0.4}, {'text': '无法信任他人', 'weight': 0.3}, {'text': '无法与妻子有正常性生活', 'weight': 0.3}]}
+INFO:rag_system_qwen:翻译成功：我幼年被陌生人强暴，导致我无法信任他人，现在也无法跟妻子有正常的性生活 -> I was raped by a stranger as a child, which made me unable to trust others, and I still can't have a
+INFO:rag_system_qwen:翻译成功：幼年被陌生人强暴 -> Raped by a stranger in childhood
+INFO:rag_system_qwen:翻译成功：无法信任他人 -> Cannot trust others
+INFO:rag_system_qwen:翻译成功：无法与妻子有正常性生活 -> Unable to have a normal sexual life with his wife
+找到 5 个相关结果:
+  结果 1 (相似度: 5.331):
+    问题:
+    问题文本: I was raped repeatedly when I was younger. I told my parents and action was taken, but now that Im a
+    回答预览: While anxiety can come about for many reasons, trauma is definitely one of the factors that makes an...
+  结果 2 (相似度: 5.331):
+    问题:
+    问题文本: I was raped repeatedly when I was younger. I told my parents and action was taken, but now that Im a
+    回答预览: Hi. Even though (thankfully) your parents responded well to you telling them, and you received treat...
+  结果 3 (相似度: 5.331):
+    问题:
+    问题文本: I was raped repeatedly when I was younger. I told my parents and action was taken, but now that Im a
+    回答预览: It's not unusual for traumatic experiences that happened when we were younger to stay with us when w...
+  结果 4 (相似度: 5.331):
+    问题: Could a rape that happened years ago be the cause of my anxiety?
+    问题文本: I was raped repeatedly when I was younger. I told my parents and action was taken, but now that Im a
+    回答预览: While anxiety can come about for many reasons, trauma is definitely one of the factors that makes an...
+  结果 5 (相似度: 5.331):
+    问题: Could a rape that happened years ago be the cause of my anxiety?
+    问题文本: I was raped repeatedly when I was younger. I told my parents and action was taken, but now that Im a
+    回答预览: Hi. Even though (thankfully) your parents responded well to you telling them, and you received treat...
+
+  生成的回答:
+INFO:rag_system_qwen:原始查询: 我幼年被陌生人强暴，导致我无法信任他人，现在也无法跟妻子有正常的性生活
+INFO:rag_system_qwen:重写结果: {'original_query': '我幼年被陌生人强暴，导致我无法信任他人，现在也无法跟妻子有正常的性生活', 'sub_queries': [{'text': '幼年被陌生人强暴的经历', 'weight': 0.4}, {'text': '无法信任他人的心理影响', 'weight': 0.3}, {'text': '与妻子无法进行正常性生活的状况', 'weight': 0.3}]}
+INFO:rag_system_qwen:翻译成功：我幼年被陌生人强暴，导致我无法信任他人，现在也无法跟妻子有正常的性生活 -> I was raped by a stranger as a child, which made me unable to trust others, and now I also cannot ha
+INFO:rag_system_qwen:翻译成功：幼年被陌生人强暴的经历 -> Being raped by a stranger in childhood
+INFO:rag_system_qwen:翻译成功：无法信任他人的心理影响 -> Psychological effects of inability to trust others
+INFO:rag_system_qwen:翻译成功：与妻子无法进行正常性生活的状况 -> Inability to have normal sexual relations with one's wife
+  根据您提供的上下文信息，虽然没有直接提到“无法信任他人”和“无法与妻子有正常性生活”的具体问题，但这些情况很可能与您幼年遭受的创伤（如被陌生人强暴）有关。从上下文中的回答来看，类似经历可能导致长期的心理影响，包括焦虑、信任问题以及性方面的困扰。
+
+### 以下是一些基于上下文信息和一般心理知识的建议：
+
+1. **寻求专业帮助**：
+   您提到的无法信任他人和性生活困难，可能是创伤后应激障碍（PTSD）或其他心理问题的表现。建议您尽快联系专业的心理治疗师或精神科医生，尤其是擅长处理创伤和性心理健康问题的专家。
+
+2. **创伤治疗**：
+   创伤后可能会出现身体和情绪上的反应，例如对亲密关系的恐惧、性功能障碍等。通过创伤治疗（如眼动脱敏与再加工疗法 EMDR、认知行为疗法 CBT 等），可以帮助您逐步恢复对他人和亲密关系的信任。
+
+3. **与伴侣沟通**：
+   与您的妻...
+
+============================================================
+
+示例查询 4: 如何帮助有心理疾病的朋友？
+--------------------------------------------------
+INFO:rag_system_qwen:原始查询: 如何帮助有心理疾病的朋友？
+INFO:rag_system_qwen:重写结果: {'original_query': '如何帮助有心理疾病的朋友？', 'sub_queries': [{'text': '如何识别心理疾病症状', 'weight': 0.4}, {'text': '如何与有心理疾病的人沟通', 'weight': 0.3}, {'text': '如何提供实际支持', 'weight': 0.3}]}
+INFO:rag_system_qwen:翻译成功：如何帮助有心理疾病的朋友？ -> How to help a friend with a mental illness?
+INFO:rag_system_qwen:翻译成功：如何识别心理疾病症状 -> How to recognize symptoms of mental illness
+INFO:rag_system_qwen:翻译成功：如何与有心理疾病的人沟通 -> How to Communicate with Someone Who Has a Mental Illness
+INFO:rag_system_qwen:翻译成功：如何提供实际支持 -> How to provide practical support
+找到 5 个相关结果:
+  结果 1 (相似度: 7.512):
+    问题: Someone I really care about has mental illness but repeatedly stops taking his medication and his symptoms come back. Sometimes my friend has to be hospitalized. How can I help him?
+    问题文本:
+    回答预览: One answer is to let the person with mental illness know that he can always count on your love and f...
+  结果 2 (相似度: 5.264):
+    问题: Is there something I should do to help my friend who is in an abusive relationship?
+    问题文本: My friends husband is bipolar and refuses to take medication for it. He has taken the wheels off her
+    回答预览: Im glad that you are seeking help and that you are supporting your friend. Im sure this is all overw...
+  结果 3 (相似度: 3.887):
+    问题: What are some of the warning signs of mental illness?
+    问题文本:
+    回答预览: Symptoms of mental disorders vary depending on the type and severity of the condition. Some general ...
+  结果 4 (相似度: 2.912):
+    问题: What are some of the warning signs of mental illness?
+    问题文本:
+    回答预览: Symptoms of mental health disorders vary depending on the type and severity of the condition....
+  结果 5 (相似度: 1.828):
+    问题:
+    问题文本: I am really worried about one of my friends because I think he has major depression. He disagrees wi
+    回答预览: First of all, I can tell that you really care about your friend and I think it's great that you are ...
+
+  生成的回答:
+INFO:rag_system_qwen:原始查询: 如何帮助有心理疾病的朋友？
+INFO:rag_system_qwen:重写结果: {'original_query': '如何帮助有心理疾病的朋友？', 'sub_queries': [{'text': '如何识别心理疾病症状', 'weight': 0.4}, {'text': '如何与有心理疾病的人沟通', 'weight': 0.3}, {'text': '如何提供实际帮助', 'weight': 0.3}]}
+INFO:rag_system_qwen:翻译成功：如何帮助有心理疾病的朋友？ -> How to help a friend with a mental illness?
+INFO:rag_system_qwen:翻译成功：如何识别心理疾病症状 -> How to recognize symptoms of mental illness
+INFO:rag_system_qwen:翻译成功：如何与有心理疾病的人沟通 -> How to Communicate with Someone Who Has a Mental Illness
+INFO:rag_system_qwen:翻译成功：如何提供实际帮助 -> How to provide practical help
+  根据上下文信息，帮助有心理疾病的朋友可以从以下几个方面入手：
+
+1. **表达支持与关爱**：让你的朋友知道你在他身边，无论他是否愿意接受帮助，你的爱和友谊对他来说都是非常重要的。这种情感支持可以为他提供一种安全感。
+
+2. **鼓励坚持治疗**：如果他的病情需要药物治疗，你可以尝试与他沟通，让他明白按时服药对他的康复至关重要。可以引导他思考不按医嘱服药带来的后果，以及坚持治疗可能带来的好处。
+
+3. **提供信息与资源**：如果你的朋友愿意寻求帮助，可以向他提供一些可靠的资源，如心理健康机构、心理咨询师或相关非营利组织的信息，帮助他更好地了解自己的状况并找到合适的治疗方法。
+
+4. **关注他的安全**：如果他的行为对自身或他人构成威胁（如自残、伤害他人等），应及时联系专业机构或紧急服务，确保他的安全。
+
+5. **照顾好自己**：在帮助朋友的过程中，也要注意自己的情绪和心理健康，避免因...
+
+================================================================================
+交互式查询
+================================================================================
+输入您的查询问题 (输入 'quit' 退出):
+
+请输入查询: 丈夫常年酗酒家暴令我无法正常生活
+
+正在检索...
+INFO:rag_system_qwen:原始查询: 丈夫常年酗酒家暴令我无法正常生活
+INFO:rag_system_qwen:重写结果: {'original_query': '丈夫常年酗酒家暴令我无法正常生活', 'sub_queries': [{'text': '丈夫酗酒', 'weight': 0.4}, {'text': '丈夫家暴', 'weight': 0.4}, {'text': '无法正常生活', 'weight': 0.2}]}
+INFO:rag_system_qwen:翻译成功：丈夫常年酗酒家暴令我无法正常生活 -> My husband's long-term alcohol abuse and domestic violence have made it impossible for me to live a
+INFO:rag_system_qwen:翻译成功：丈夫酗酒 -> Husband is an alcoholic.
+INFO:rag_system_qwen:翻译成功：丈夫家暴 -> Husband abuse
+INFO:rag_system_qwen:翻译成功：无法正常生活 -> Unable to live a normal life
+找到 5 个相关结果:
+  结果 1 (相似度: 4.244):
+    问题:
+    问题文本预览: Every day for five years, my husband mentally abused me and said he will change. I have a child with him. I try so hard to stay strong for her, but at...
+    回答预览: I think your own awareness will not allow you to continue in a bad relationship.Be glad something within you is telling you that there are better ways...
+  结果 2 (相似度: 4.244):
+    问题: Should I stay with my manipulative husband?
+    问题文本预览: Every day for five years, my husband mentally abused me and said he will change. I have a child with him. I try so hard to stay strong for her, but at...
+    回答预览: I think your own awareness will not allow you to continue in a bad relationship.Be glad something within you is telling you that there are better ways...
+  结果 3 (相似度: 3.776):
+    问题:
+    问题文本预览: My boyfriend and I have been together for five years now. Throughout the entire first day that we met, he and I had the opportunity to interact quite ...
+    回答预览: Hi Winters, I learned a long time ago that I can't ever predict who will change and who won't. I meet couples who seem to have all the ingredients but...
+  结果 4 (相似度: 3.776):
+    问题: Is it possible to gain joy and prosperity in my relationship after years of unhappiness?
+    问题文本预览: My boyfriend and I have been together for five years now. Throughout the entire first day that we met, he and I had the opportunity to interact quite ...
+    回答预览: Hi Winters, I learned a long time ago that I can't ever predict who will change and who won't. I meet couples who seem to have all the ingredients but...
+  结果 5 (相似度: 3.564):
+    问题: How can I stop struggling with alcohol?
+    问题文本预览: My father is an alcoholic, and I see tendencies of that in myself. I am recently married, and I feel it affecting our relationship. I'm not sure why I...
+    回答预览: Congratulations on taking the first step on the road towards recovery by acknowledging the problem and asking for help! The American Society of Addict...
+
+生成的回答:
+INFO:rag_system_qwen:原始查询: 丈夫常年酗酒家暴令我无法正常生活
+INFO:rag_system_qwen:重写结果: {'original_query': '丈夫常年酗酒家暴令我无法正常生活', 'sub_queries': [{'text': '丈夫酗酒', 'weight': 0.4}, {'text': '丈夫家暴', 'weight': 0.4}, {'text': '无法正常生活', 'weight': 0.2}]}
+INFO:rag_system_qwen:翻译成功：丈夫常年酗酒家暴令我无法正常生活 -> The husband's long-term alcohol abuse and domestic violence have made it impossible for me to live a
+INFO:rag_system_qwen:翻译成功：丈夫酗酒 -> Husband is an alcoholic.
+INFO:rag_system_qwen:翻译成功：丈夫家暴 -> Husband's domestic violence
+INFO:rag_system_qwen:翻译成功：无法正常生活 -> Unable to live a normal life
+  根据您描述的情况，您的丈夫存在酗酒和家暴的问题，这已经严重影响到您的正常生活。这种情况下，您需要优先考虑自己的安全和身心健康。
+
+### 建议如下：
+
+1. **确保人身安全**：
+   - 如果您或孩子面临直接的危险，请立即联系当地警方或相关机构寻求帮助。
+   - 在紧急情况下，可以拨打当地的紧急电话（如中国的110）或寻找庇护所。
+
+2. **寻求专业支持**：
+   - 联系当地妇女权益组织、家庭暴力援助中心或心理咨询机构，他们可以为您提供情感支持、法律咨询和实际帮助。
+   - 例如，您可以查找“妇联”、“反家暴热线”或“心理援助热线”等资源。
+
+3. **制定安全计划**：
+   - 与专业人士一起制定一个详细的离开计划，包括如何保护自己和孩子的安全、如何处理财产、如何获得法律帮助等。
+   - 保存好相关证据（如医疗记录、报警记录、聊天记录等），以备后续可能的法律程序。
+
+4. **不要独自承担一切**：
+   - 您不是唯一经历这种情况的人，有很多人曾经面临过类似的困境，并成功走出了阴影。
+   - 寻找支持团体或在线社区，与其他有类似经历的人交流，可以帮助您减轻孤独感并获得力量。
+
+5. **关注自身心理健康**：
+   - 长期处于高压和创伤环境中会对心理造成严重影响，建议寻求心理咨询师的帮助，进行情绪疏导和心理康复。
+
+6. **了解法律权利**：
+   - 了解您在法律上的权利，包括离婚、子女抚养权、财产分割等，必要时可寻求律师的帮助。
+
+请记住，您有权利过上安全、健康的生活。不要因为爱或责任而忽视自己的需求。希望您能尽快找到支持，走出困境。
+
+请输入查询:
+程序被用户中断
+
+演示结束！
+(.venv) PS E:\1__xubin_hu\Program and setting\python program\Trae test>

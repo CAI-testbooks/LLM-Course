@@ -1,0 +1,237 @@
+# AI 驱动的软件开发助手实验报告
+
+## 摘要
+
+本实验构建了一个基于代码专用大语言模型（LLM）的智能软件开发助手（DevAgent），实现了从需求理解到代码生成、单元测试编写及 Bug 修复的全流程辅助功能。系统采用 DeepSeek-Coder 作为基础模型，集成了 SWE-bench_Lite 等代码基准数据集进行训练与评估，最终通过命令行界面（CLI）提供服务。实验结果表明，该助手在 SWE-bench 基准测试中能够完成基础的代码修复任务，为软件开发过程提供有效支持。
+
+## 1. 引言
+
+### 1.1 研究背景
+
+随着大语言模型在代码领域的快速发展，AI 驱动的软件开发工具逐渐成为研究热点。这类工具能够辅助开发者完成需求分析、代码生成、测试编写和 Bug 修复等任务，显著提升开发效率。本实验基于代码专用 LLM 构建智能开发助手，探索其在实际软件工程任务中的应用效果。
+
+### 1.2 实验目标
+
+- 构建支持多任务的软件开发助手，涵盖需求理解、代码生成、测试编写和 Bug 修复功能
+- 基于 SWE-bench 等基准数据集验证助手的有效性
+- 提供便捷的 CLI 工具供用户交互使用
+- 分析助手在实际任务中的表现并提出优化方向
+
+## 2. 相关技术与工具
+
+### 2.1 代码基准数据集
+
+- **SWE-bench_Lite**：包含真实开源项目中的 Bug 修复案例，每个实例包含问题描述、测试用例和参考补丁，用于评估 Bug 修复能力
+- 数据集结构：包含`repo`（仓库名）、`instance_id`（实例 ID）、`problem_statement`（问题描述）、`FAIL_TO_PASS`（需修复的测试用例）等字段
+
+### 2.2 基础模型
+
+- **DeepSeek-Coder-7b-instruct-v1.5**：代码专用 LLM，在代码生成和理解任务上表现优异
+- 模型配置：支持最大 2048 tokens 生成，采用 temperature=0.2 的确定性解码策略
+
+### 2.3 开发工具
+
+- 编程语言：Python 3.8+
+- 核心库：Hugging Face Transformers（模型加载与推理）、Datasets（数据加载）、Click（CLI 构建）
+- 硬件环境：支持 CUDA 加速的 GPU（优先）或 CPU
+
+## 3. 系统设计与实现
+
+### 3.1 系统架构
+
+系统采用模块化设计，主要包含以下核心组件：
+
+- **DevAgent**：核心控制模块，负责任务调度与流程管理
+- **功能模块**：代码生成器、测试编写器、Bug 修复器
+- **数据加载器**：处理 SWE-bench 等数据集的加载与预处理
+- **评估器**：在基准数据集上评估系统性能
+- **CLI 接口**：提供用户交互入口
+
+```plaintext
+┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+│   CLI接口     │────▶│   DevAgent    │────▶│ 功能模块       │
+└───────────────┘     └───────────────┘     │- 代码生成     │
+        ▲                                     │- 测试编写     │
+        │                                     │- Bug修复     │
+        │                                     └───────────────┘
+        │                                             ▲
+┌───────────────┐                                     │
+│   评估器      │◀────────────────────────────────────┘
+└───────────────┘     ┌───────────────┐
+        ▲             │   数据加载器   │
+        └────────────▶│(SWE-bench等)  │
+                      └───────────────┘
+```
+
+### 3.2 核心模块实现
+
+#### 3.2.1 需求理解模块
+
+```python
+def understand_requirement(self, instruction):
+    prompt = f"""
+    分析以下软件开发需求，判断任务类型（仅返回code_generation/test_writing/bug_fix中的一个）：
+    需求：{instruction}
+    任务类型：
+    """
+    # 模型推理与结果解析...
+    return task_type
+```
+
+#### 3.2.2 代码生成模块
+
+```python
+def generate_code(self, instruction):
+    prompt = f"""
+    你是专业的Python开发工程师，根据以下需求编写高质量代码：
+    需求：{instruction}
+    要求：
+    1. 代码格式规范，包含必要的注释
+    2. 处理边界条件和异常
+    3. 输出完整的可运行代码
+    代码：
+    """
+    # 模型生成与代码提取...
+    return code
+```
+
+#### 3.2.3 Bug 修复模块
+
+```python
+def fix_bug(self, instruction):
+    prompt = f"""
+    你是专业的软件调试工程师，根据以下需求修复代码中的Bug：
+    需求：{instruction}
+    要求：
+    1. 明确指出问题所在
+    2. 生成修复后的完整可运行代码
+    3. 添加注释说明修复思路
+    修复后的代码：
+    """
+    # 模型生成与补丁提取...
+    return fixed_code
+```
+
+#### 3.2.4 评估模块
+
+```python
+def _evaluate_single_task(self, instance):
+    # 1. 构造修复指令
+    # 2. 调用Agent生成修复补丁
+    # 3. 验证测试用例通过情况
+    # 4. 判断任务是否成功（FAIL_TO_PASS全过且PASS_TO_PASS全过）
+    return task_result
+```
+
+## 4. 实验设置
+
+### 4.1 数据集配置
+
+本次实验同时采用三类主流代码基准数据集，分别针对代码生成、功能实现、真实 Bug 修复三类核心任务进行评估，具体配置如下：
+
+|   数据集名称   |         核心用途          |          数据规模          |     数据分裂     |     缓存路径     |              核心评估指标               |
+| :------------: | :-----------------------: | :------------------------: | :--------------: | :--------------: | :-------------------------------------: |
+|   HumanEval    |     代码生成能力评估      | 164 个 Python 函数生成任务 |      测试集      | ./data/humaneval |      通过率（Pass@k，k=1/10/100）       |
+|      MBPP      |  功能型代码实现能力评估   |  1000 个 Python 编程任务   | 测试集（500 个） |   ./data/mbpp    |      功能正确性（测试用例通过率）       |
+| SWE-bench_Lite | 真实场景 Bug 修复能力评估 |  300 个开源项目 Bug 案例   |      测试集      | ./data/swe_bench | 修复成功率（成功修复实例数 / 总实例数） |
+
+> 说明：
+>
+> - HumanEval 聚焦纯代码生成任务，评估模型从自然语言描述生成符合规范函数的能力；
+> - MBPP 侧重功能实现，每个任务包含详细需求、测试用例，评估代码的实际功能正确性；
+> - SWE-bench_Lite 基于真实开源项目 Bug，评估模型解决实际软件工程问题的能力。
+
+### 4.2 模型参数
+
+模型参数保持统一配置，确保跨数据集评估的一致性，具体如下：
+
+```python
+MODEL_CONFIG = {
+    "model_name": "./deepseek-coder-7b-instruct-v1.5",
+    "device": "cuda" if torch.cuda.is_available() else "cpu",
+    "max_new_tokens": 2048,
+    "temperature": 0.2,    
+    "top_p": 0.95,
+    "repetition_penalty": 1.1 
+}
+```
+
+### 4.3 评估流程
+
+针对三类数据集的不同特点，设计统一框架下的差异化评估流程，整体流程如下：
+
+1. 数据集加载阶段：
+
+   - 分别加载 HumanEval、MBPP、SWE-bench_Lite 数据集并完成预处理（如格式标准化、测试用例提取）；
+   - 为每个数据集构建独立的任务指令模板（适配不同数据集的任务描述风格）。
+
+2. 分数据集评估阶段：
+
+   - HumanEval 评估：
+
+     ① 对每个函数生成任务，调用 Agent 生成 100 个候选代码样本；
+
+     ② 执行样本代码，验证是否通过所有隐式测试用例；
+
+     ③ 计算 Pass@1、Pass@10、Pass@100 指标。
+
+   - MBPP 评估：
+
+     ① 对每个编程任务，调用 Agent 生成完整可运行代码；
+
+     ② 执行数据集自带的显式测试用例；
+
+     ③ 统计通过全部测试用例的任务数量，计算功能正确率。
+
+   - SWE-bench_Lite 评估：
+
+     ① 对每个 Bug 案例，提取问题描述和测试用例集（FAIL_TO_PASS/PASS_TO_PASS）
+
+     ② 调用 Agent 生成修复补丁；
+
+     ③ 验证补丁是否使 FAIL_TO_PASS 测试全部通过，且 PASS_TO_PASS 测试无回归；
+
+     ④ 统计成功修复的实例数，计算修复成功率。
+
+3. 结果汇总阶段：
+
+   - 分别输出三类数据集的评估指标结果；
+   - 综合分析 Agent 在代码生成、功能实现、Bug 修复三类任务中的表现差异
+
+## 5.实验结果
+
+#### HumanEval数据集
+
+样本数量 : 164
+通过       : 148
+通过率       : 0.9024
+
+![image-20260105205234890](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260105205234890.png)
+
+![image-20260105205241651](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260105205241651.png)
+
+![image-20260105205245668](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260105205245668.png)
+
+#### MBPP数据集
+
+Total Samples        : 500
+Executable Tests     : 500
+Assertion Error      : 0
+Timeout Cases        : 0
+Runtime Error Cases  : 0
+
+![image-20260107135408120](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260107135408120.png)
+
+![image-20260107135416543](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260107135416543.png)
+
+#### SWE数据集
+
+Total Samples :300
+Matched Fixes :48
+Fix Rate :0.1600
+
+![image-20260108191206364](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260108191206364.png)
+
+![image-20260108191212743](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260108191212743.png)
+
+![image-20260108191218123](C:\Users\AA\AppData\Roaming\Typora\typora-user-images\image-20260108191218123.png)

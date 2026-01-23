@@ -1,0 +1,3 @@
+[console_scripts]
+devagent = cli.main:cli
+

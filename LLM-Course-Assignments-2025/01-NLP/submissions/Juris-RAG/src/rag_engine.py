@@ -1,0 +1,1455 @@
+"""
+Juris-RAG 核心引擎模块
+支持多轮对话、长上下文、引用来源显示、拒绝不确定回答
+"""
+import os
+import re
+from typing import List, Dict, Tuple, Optional, Generator
+from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+import time
+
+# 优先使用新版 langchain-chroma，兼容旧版 langchain-community
+try:
+    from langchain_chroma import Chroma  # type: ignore
+except ImportError:  # pragma: no cover - 兼容旧环境
+    from langchain_community.vectorstores import Chroma
+try:
+    from langchain_openai import OpenAIEmbeddings
+except ImportError:  # fallback for older installs
+    from langchain_community.embeddings import OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage
+
+# 尝试导入链组件（兼容不同版本）
+try:
+    from langchain.chains import create_history_aware_retriever, create_retrieval_chain
+    from langchain.chains.combine_documents import create_stuff_documents_chain
+except ImportError:
+    try:
+        from langchain_core.runnables import RunnablePassthrough
+        # 如果没有传统chains，使用简化实现
+        create_history_aware_retriever = None
+        create_retrieval_chain = None
+        create_stuff_documents_chain = None
+    except ImportError:
+        pass
+
+try:
+    from langchain_core.documents import Document
+except ImportError:  # fallback for older langchain versions
+    try:
+        from langchain.schema import Document
+    except ImportError:
+        from langchain_community.docstore.document import Document
+
+# 导入配置
+try:
+    from src.config import (
+        DB_PATH, EMBEDDING_MODEL, LLM_MODEL, SILICONFLOW_API_KEY,
+        SILICONFLOW_BASE_URL, RETRIEVAL_TOP_K, RETRIEVAL_SCORE_THRESHOLD,
+        LLM_TEMPERATURE, LLM_MAX_TOKENS, MAX_HISTORY_TURNS,
+        CONFIDENCE_THRESHOLD, UNCERTAIN_RESPONSE,
+        ENABLE_RERANKER, RERANKER_TOP_K, RERANKER_THRESHOLD,
+        ENABLE_CACHE, CACHE_MAX_SIZE, ENABLE_HALLUCINATION_CHECK,
+        SELECTIVE_HALLUCINATION_CHECK, HALLUCINATION_CHECK_HIGH_RISK,
+        HALLUCINATION_CHECK_HIGH_RISK_USE_LLM, HALLUCINATION_CHECK_NORMAL,
+        HALLUCINATION_CHECK_TIMEOUT, ENABLE_PARALLEL_RETRIEVAL,
+        MAX_PARALLEL_WORKERS, PARALLEL_RETRIEVAL_TIMEOUT,
+        ENABLE_STREAM_GENERATION, STREAM_CHUNK_SIZE
+    )
+except ImportError:
+    # 默认回退配置
+    DB_PATH = "./data/vector_db"
+    EMBEDDING_MODEL = "BAAI/bge-m3"
+    LLM_MODEL = "Qwen/Qwen3-8B"
+    SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY")
+    SILICONFLOW_BASE_URL = "https://api.siliconflow.cn/v1"
+    RETRIEVAL_TOP_K = 8
+    RETRIEVAL_SCORE_THRESHOLD = 0.2
+    LLM_TEMPERATURE = 0.1
+    LLM_MAX_TOKENS = 2048
+    MAX_HISTORY_TURNS = 10
+    CONFIDENCE_THRESHOLD = 0.4
+    UNCERTAIN_RESPONSE = "根据现有法律数据库，我无法回答此问题。"
+    ENABLE_RERANKER = True
+    RERANKER_TOP_K = 5
+    RERANKER_THRESHOLD = 0.4
+    ENABLE_CACHE = True
+    CACHE_MAX_SIZE = 100
+    ENABLE_HALLUCINATION_CHECK = True
+
+# 导入Reranker模块
+try:
+    from src.reranker import (
+        get_reranker, rerank_documents, check_scope, check_hallucination,
+        TTLCache, RerankedDocument, ScopeCheckResult, HallucinationCheckResult
+    )
+    RERANKER_AVAILABLE = True
+except ImportError:
+    RERANKER_AVAILABLE = False
+    print("⚠️ Reranker模块未加载，将使用基础检索策略")
+
+# ==================== 方案A: 超范围检测配置 ====================
+# 非刑法领域关键词 - 检测到这些词时触发超范围拒绝
+OUT_OF_SCOPE_KEYWORDS = [
+    # 民法相关
+    "民法典", "合同法", "婚姻法", "继承法", "物权法", "侵权责任",
+    "民事纠纷", "离婚", "抚养权", "遗产继承", "房产纠纷", "债务纠纷",
+    "借款合同", "租赁合同", "买卖合同", "劳务合同",
+    # 商法相关  
+    "公司法", "证券法", "保险法", "票据法", "破产法",
+    "股票", "基金", "投资理财", "上市公司", "董事会", "股东",
+    "商业秘密", "知识产权", "专利", "商标", "著作权",
+    # 行政法相关
+    "行政处罚", "行政复议", "行政诉讼", "拆迁", "土地征收",
+    "行政许可", "行政强制", "公务员", "事业编",
+    # 劳动法相关
+    "劳动法", "劳动合同", "社保", "工伤", "劳动仲裁",
+    "加班费", "年假", "辞退赔偿", "五险一金",
+    # 其他非刑法
+    "税法", "海关", "环保法", "食品安全",
+    "医疗纠纷", "医患关系", "交通事故赔偿"
+]
+
+# 超范围拒绝响应模板
+OUT_OF_SCOPE_RESPONSE = """抱歉，您的问题涉及**{detected_domain}**领域，不在本系统的服务范围内。
+
+**本系统专注于中国刑法领域**，包括：
+- 各类刑事犯罪的认定与量刑
+- 刑事责任年龄、自首、立功等情节
+- 正当防卫、紧急避险等免责事由
+- 刑事案例的判决参考
+
+**建议**：
+- 民事问题请咨询民事律师或查阅民法典
+- 商事问题请咨询公司法/证券法律师
+- 劳动问题请咨询劳动仲裁部门或劳动律师
+- 行政问题请咨询行政法律师或相关政府部门
+
+如果您有**刑法相关问题**，欢迎继续咨询！"""
+
+# 最低相关性阈值 - 低于此值视为超范围
+MIN_RELEVANCE_THRESHOLD = 0.65
+
+
+@dataclass
+class Citation:
+    """引用来源数据类"""
+    source: str
+    doc_type: str
+    content: str
+    relevance_score: float
+    metadata: Dict
+
+
+@dataclass
+class RAGResponse:
+    """RAG响应数据类"""
+    answer: str
+    citations: List[Citation]
+    confidence: float
+    is_uncertain: bool
+    retrieved_docs: List[Document]
+
+
+class JurisRAGEngine:
+    """法律RAG引擎 - 支持多领域"""
+    
+    def _try_load_multi_domain_vectorstores(self) -> bool:
+        """
+        尝试加载多领域向量库
+        
+        Returns:
+            True 如果成功加载多领域，False 否则
+        """
+        legal_domains = {
+            'criminal': '刑法',
+            'civil': '民法',
+            'commercial': '商法',
+            'administrative': '行政法',
+            'labor': '劳动法'
+        }
+        
+        self.vectorstores_multi = {}
+        loaded_count = 0
+        
+        for domain_key, domain_name in legal_domains.items():
+            domain_db_path = os.path.join(DB_PATH, domain_key)
+            if os.path.exists(domain_db_path):
+                try:
+                    vs = Chroma(
+                        persist_directory=domain_db_path,
+                        embedding_function=self.embeddings
+                    )
+                    self.vectorstores_multi[domain_key] = {
+                        'vectorstore': vs,
+                        'retriever': vs.as_retriever(search_type="similarity", search_kwargs={"k": RETRIEVAL_TOP_K * 2}),
+                        'name': domain_name
+                    }
+                    loaded_count += 1
+                except Exception as e:
+                    print(f"⚠️  无法加载 {domain_name} 向量库: {e}")
+        
+        if loaded_count > 0:
+            print(f"✅ 成功加载 {loaded_count} 个领域的向量库")
+            return True
+        return False
+    
+    def __init__(self, streaming: bool = True):
+        """
+        初始化RAG引擎
+        
+        Args:
+            streaming: 是否启用流式输出
+        """
+        if not SILICONFLOW_API_KEY:
+            raise ValueError("❌ 未找到 SILICONFLOW_API_KEY，请检查环境变量！")
+        
+        self.streaming = streaming
+        self.chat_history: List[Tuple[str, str]] = []
+        self.vectorstore = None  # 防止AttributeError
+        self.multi_domain_mode = False
+        
+        # 初始化组件
+        self._init_embeddings()
+        self._init_vectorstore()
+        self._init_llm()
+        self._init_chains()
+    
+    # ==================== 方案A: 超范围检测 ====================
+    def _detect_out_of_scope(self, query: str) -> Tuple[bool, str]:
+        """
+        检测问题是否超出刑法范围
+        
+        Args:
+            query: 用户问题
+            
+        Returns:
+            Tuple[bool, str]: (是否超范围, 检测到的领域)
+        """
+        query_lower = query.lower()
+        
+        # 检测到的非刑法领域
+        detected_domains = []
+        
+        # 按领域分组检测
+        domain_keywords = {
+            "民法/合同法": ["民法典", "合同法", "婚姻法", "继承法", "物权法", "侵权责任",
+                         "民事纠纷", "离婚", "抚养权", "遗产继承", "房产纠纷", "债务纠纷",
+                         "借款合同", "租赁合同", "买卖合同", "劳务合同"],
+            "商法/公司法": ["公司法", "证券法", "保险法", "票据法", "破产法",
+                         "股票", "基金", "投资理财", "上市公司", "董事会", "股东",
+                         "商业秘密", "知识产权", "专利", "商标", "著作权"],
+            "行政法": ["行政处罚", "行政复议", "行政诉讼", "拆迁", "土地征收",
+                     "行政许可", "行政强制", "公务员", "事业编"],
+            "劳动法": ["劳动法", "劳动合同", "社保", "工伤", "劳动仲裁",
+                     "加班费", "年假", "辞退赔偿", "五险一金"],
+            "其他非刑法": ["税法", "海关", "环保法", "食品安全",
+                        "医疗纠纷", "医患关系", "交通事故赔偿"]
+        }
+        
+        for domain, keywords in domain_keywords.items():
+            for keyword in keywords:
+                if keyword in query:
+                    detected_domains.append(domain)
+                    break
+        
+        if detected_domains:
+            # 去重并返回第一个检测到的领域
+            return True, detected_domains[0]
+        
+        return False, ""
+    
+    def _is_low_relevance(self, docs: List[Document]) -> bool:
+        """
+        检测检索结果的相关性是否过低
+        如果所有文档的相关性都低于阈值，认为超出范围
+        
+        Args:
+            docs: 检索到的文档
+            
+        Returns:
+            bool: 是否相关性过低
+        """
+        if not docs:
+            return True
+        
+        # 计算法条文档的平均相关性
+        statute_scores = []
+        for doc in docs:
+            if doc.metadata.get("type") == "statute":
+                score = doc.metadata.get("relevance_score", 1.0)
+                # ChromaDB分数越低越相关
+                relevance = 1 - min(score / 2, 1.0)
+                statute_scores.append(relevance)
+        
+        if not statute_scores:
+            # 没有检索到法条，可能是超范围
+            return True
+        
+        avg_relevance = sum(statute_scores) / len(statute_scores)
+        return avg_relevance < MIN_RELEVANCE_THRESHOLD
+    
+    def _should_check_hallucination(self, is_out_of_scope: bool, docs: List[Document]) -> Tuple[bool, bool]:
+        """
+        【方案D】混合检测策略：根据问题类型采用不同的检测方法
+        
+        Args:
+            is_out_of_scope: 是否被检测为超范围问题
+            docs: 检索到的文档列表
+            
+        Returns:
+            Tuple[bool, bool]: (是否应该检测, 是否使用LLM深度检测)
+            - (False, False): 不检测（正常问题，快速模式）
+            - (True, False): 本地快速检测（不推荐，易误报）
+            - (True, True): LLM深度检测（高风险问题，准确模式）
+        """
+        if not SELECTIVE_HALLUCINATION_CHECK:
+            # 如果禁用选择性检测，使用全局配置
+            return ENABLE_HALLUCINATION_CHECK, False
+        
+        # 🔴 超范围问题：不需要幻觉检测（已被快速拒答）
+        if is_out_of_scope:
+            return False, False
+        
+        # 🟡 高风险情况1：检索文档过少（<2个）→ LLM深度检测
+        if len(docs) < 2:
+            return HALLUCINATION_CHECK_HIGH_RISK, HALLUCINATION_CHECK_HIGH_RISK_USE_LLM
+        
+        # 🟡 高风险情况2：相关性过低 → LLM深度检测
+        if self._is_low_relevance(docs):
+            return HALLUCINATION_CHECK_HIGH_RISK, HALLUCINATION_CHECK_HIGH_RISK_USE_LLM
+        
+        # ✅ 正常情况：充足的高质量文档 → 不检测（快速模式）
+        return HALLUCINATION_CHECK_NORMAL, False
+    
+    def _init_embeddings(self):
+        """初始化Embedding模型"""
+        self.embeddings = OpenAIEmbeddings(
+            model=EMBEDDING_MODEL,
+            openai_api_base=SILICONFLOW_BASE_URL,
+            openai_api_key=SILICONFLOW_API_KEY
+        )
+    
+    def _init_vectorstore(self):
+        """初始化向量数据库"""
+        if not os.path.exists(DB_PATH):
+            raise FileNotFoundError(
+                f"❌ 向量库不存在: {DB_PATH}\n"
+                f"   请先运行: python -m src.data_processing"
+            )
+        
+        # 尝试加载多领域向量库
+        self.multi_domain_mode = self._try_load_multi_domain_vectorstores()
+        
+        if self.multi_domain_mode:
+            print("✅ 多领域模式已启动")
+        else:
+            # 回退到单领域模式（刑法）
+            print("⚠️  未检测到多领域向量库，使用单领域模式（刑法）")
+            self.vectorstore = Chroma(
+                persist_directory=DB_PATH,
+                embedding_function=self.embeddings
+            )
+            
+            # 使用更宽松的相似度检索，后续通过后处理过滤
+            self.retriever = self.vectorstore.as_retriever(
+                search_type="similarity",
+                search_kwargs={
+                    "k": RETRIEVAL_TOP_K * 2  # 检索更多，后处理筛选
+                }
+            )
+    
+    def _extract_crime_keywords(self, query: str) -> List[str]:
+        """
+        从查询中提取罪名关键词，返回多个增强查询
+        方案C增强：扩展罪名映射，支持更多罪名（包括少见罪名）
+        """
+        # 常见罪名关键词映射 - 包含条款号和核心描述词（全面扩展版）
+        crime_mappings = {
+            # ==================== 侵犯公民人身权利罪（第四章）====================
+            "故意杀人": ["第二百三十二条 故意杀人 死刑 无期徒刑", "侵犯公民人身权利 故意杀人"],
+            "杀人": ["第二百三十二条 故意杀人 死刑", "侵犯公民人身权利"],
+            "过失致人死亡": ["第二百三十三条 过失致人死亡 三年以上七年以下"],
+            "故意伤害": ["第二百三十四条 故意伤害 轻伤 重伤 致人死亡"],
+            "伤害": ["第二百三十四条 故意伤害"],
+            "过失致人重伤": ["第二百三十五条 过失致人重伤"],
+            "强奸": ["第二百三十六条 强奸 暴力 胁迫 妇女 奸淫幼女", "侵犯公民人身权利 强奸罪 三年以上十年以下"],
+            "强奸罪": ["第二百三十六条 强奸 暴力 胁迫 妇女", "奸淫不满十四周岁幼女 十年以上有期徒刑"],
+            "奸淫幼女": ["第二百三十六条 奸淫不满十四周岁 从重处罚"],
+            "强制猥亵": ["第二百三十七条 强制猥亵 侮辱妇女 聚众"],
+            "猥亵": ["第二百三十七条 强制猥亵 侮辱 猥亵儿童"],
+            "猥亵儿童": ["第二百三十七条 猥亵儿童 从重处罚"],
+            "非法拘禁": ["第二百三十八条 非法拘禁 剥夺人身自由"],
+            "绑架": ["第二百三十九条 绑架 勒索财物 人质 十年以上"],
+            "绑架罪": ["第二百三十九条 绑架 勒索财物 杀害被绑架人 死刑"],
+            "拐卖": ["第二百四十条 拐卖妇女儿童 五年以上十年以下"],
+            "拐卖妇女": ["第二百四十条 拐卖妇女 儿童 人口贩卖"],
+            "拐卖儿童": ["第二百四十条 拐卖儿童 五年以上"],
+            "收买被拐卖": ["第二百四十一条 收买被拐卖的妇女儿童"],
+            "拐骗儿童": ["第二百六十二条 拐骗儿童 五年以下"],
+            "侮辱": ["第二百四十六条 侮辱罪 诽谤罪"],
+            "诽谤": ["第二百四十六条 诽谤罪 捏造事实"],
+            "刑讯逼供": ["第二百四十七条 刑讯逼供 暴力取证"],
+            "虐待": ["第二百六十条 虐待罪 家庭成员"],
+            "遗弃": ["第二百六十一条 遗弃罪 负有扶养义务"],
+            "重婚": ["第二百五十八条 重婚罪 有配偶而重婚"],
+            
+            # ==================== 侵犯财产罪（第五章）====================
+            "抢劫": ["第二百六十三条 抢劫 暴力 胁迫 侵犯财产罪 三年以上"],
+            "抢劫罪": ["第二百六十三条 抢劫 入户抢劫 抢劫银行 十年以上"],
+            "盗窃": ["第二百六十四条 盗窃 数额较大 数额巨大 侵犯财产罪"],
+            "盗窃罪": ["第二百六十四条 盗窃 入户盗窃 扒窃 多次盗窃"],
+            "诈骗": ["第二百六十六条 诈骗 数额较大 数额巨大"],
+            "诈骗罪": ["第二百六十六条 诈骗 虚构事实 隐瞒真相"],
+            "抢夺": ["第二百六十七条 抢夺 公然夺取"],
+            "抢夺罪": ["第二百六十七条 抢夺 携带凶器抢夺"],
+            "聚众哄抢": ["第二百六十八条 聚众哄抢 公私财物"],
+            "侵占": ["第二百七十条 侵占 代为保管 拒不退还"],
+            "职务侵占": ["第二百七十一条 职务侵占 公司企业"],
+            "挪用资金": ["第二百七十二条 挪用资金 归个人使用"],
+            "敲诈勒索": ["第二百七十四条 敲诈勒索 威胁 要挟"],
+            "敲诈勒索罪": ["第二百七十四条 敲诈勒索 数额较大"],
+            "故意毁坏财物": ["第二百七十五条 故意毁坏财物"],
+            "破坏生产经营": ["第二百七十六条 破坏生产经营"],
+            
+            # ==================== 危害公共安全罪（第二章）====================
+            "放火": ["第一百一十四条 放火罪 危害公共安全"],
+            "放火罪": ["第一百一十四条 放火 尚未造成严重后果", "第一百一十五条 放火 致人重伤死亡"],
+            "决水": ["第一百一十四条 决水罪 危害公共安全"],
+            "爆炸": ["第一百一十四条 爆炸罪 危害公共安全"],
+            "爆炸罪": ["第一百一十四条 爆炸 危害公共安全 十年以上"],
+            "投放危险物质": ["第一百一十四条 投放危险物质 投毒"],
+            "投毒": ["第一百一十四条 投放危险物质"],
+            "以危险方法危害公共安全": ["第一百一十四条 以危险方法危害公共安全"],
+            "破坏交通工具": ["第一百一十六条 破坏交通工具 火车 汽车 船只"],
+            "破坏交通设施": ["第一百一十七条 破坏交通设施"],
+            "劫持航空器": ["第一百二十一条 劫持航空器 十年以上"],
+            "劫持": ["第一百二十一条 劫持航空器 劫持船只"],
+            "交通肇事": ["第一百三十三条 交通肇事 逃逸 重大事故 危害公共安全"],
+            "交通肇事罪": ["第一百三十三条 交通肇事 致人死亡 逃逸 三年以下"],
+            "肇事逃逸": ["第一百三十三条 交通肇事后逃逸 三年以上七年以下"],
+            "醉驾": ["第一百三十三条之一 危险驾驶 醉酒驾驶 拘役"],
+            "危险驾驶": ["第一百三十三条之一 危险驾驶 醉酒 追逐竞驶"],
+            "危险驾驶罪": ["第一百三十三条之一 危险驾驶 校车 客运 严重超载"],
+            "非法持有枪支": ["第一百二十八条 非法持有枪支弹药"],
+            "枪支": ["第一百二十五条 非法制造买卖枪支", "第一百二十八条 非法持有枪支"],
+            "重大责任事故": ["第一百三十四条 重大责任事故罪"],
+            "重大劳动安全事故": ["第一百三十五条 重大劳动安全事故罪"],
+            
+            # ==================== 走私罪（第三章第二节）====================
+            "走私": ["第一百五十一条 走私罪 武器弹药 核材料 假币", "第一百五十三条 走私普通货物"],
+            "走私罪": ["第一百五十一条 走私武器弹药 走私核材料 走私假币 无期徒刑 死刑"],
+            "走私武器": ["第一百五十一条 走私武器弹药 七年以上 无期徒刑 死刑"],
+            "走私毒品": ["第三百四十七条 走私毒品 贩卖毒品 运输毒品 制造毒品", "鸦片 海洛因 甲基苯丙胺"],
+            "走私假币": ["第一百五十一条 走私假币 三年以上十年以下"],
+            "走私文物": ["第一百五十一条 走私文物 国家禁止出口"],
+            "走私贵重金属": ["第一百五十一条 走私贵重金属 黄金白银"],
+            "走私珍贵动物": ["第一百五十一条 走私珍贵动物 珍贵动物制品"],
+            "走私普通货物": ["第一百五十三条 走私普通货物物品 偷逃关税"],
+            "走私废物": ["第一百五十二条 走私废物 固体废物"],
+            
+            # ==================== 毒品犯罪（第六章第七节）====================
+            "毒品": ["第三百四十七条 走私贩卖运输制造毒品", "第三百四十八条 非法持有毒品"],
+            "贩毒": ["第三百四十七条 贩卖毒品 走私运输制造"],
+            "贩卖毒品": ["第三百四十七条 贩卖毒品 鸦片 海洛因 甲基苯丙胺 冰毒"],
+            "制造毒品": ["第三百四十七条 制造毒品 无期徒刑 死刑"],
+            "运输毒品": ["第三百四十七条 运输毒品"],
+            "非法持有毒品": ["第三百四十八条 非法持有毒品 鸦片一千克以上"],
+            "容留他人吸毒": ["第三百五十四条 容留他人吸毒"],
+            "引诱吸毒": ["第三百五十三条 引诱教唆欺骗他人吸毒"],
+            
+            # ==================== 贪污贿赂罪（第八章）====================
+            "贪污": ["第三百八十二条 贪污罪 国家工作人员 侵吞"],
+            "贪污罪": ["第三百八十二条 贪污 利用职务便利 侵吞挪用骗取公共财物"],
+            "受贿": ["第三百八十五条 受贿罪 国家工作人员 谋取利益"],
+            "受贿罪": ["第三百八十五条 受贿 收受贿赂 索取贿赂 为他人谋取利益"],
+            "行贿": ["第三百八十九条 行贿罪 给予财物"],
+            "行贿罪": ["第三百八十九条 行贿 为谋取不正当利益 给予国家工作人员财物"],
+            "挪用公款": ["第三百八十四条 挪用公款 归个人使用"],
+            "挪用公款罪": ["第三百八十四条 挪用公款 进行非法活动 营利活动"],
+            "巨额财产来源不明": ["第三百九十五条 巨额财产来源不明罪"],
+            "私分国有资产": ["第三百九十六条 私分国有资产罪"],
+            "单位受贿": ["第三百八十七条 单位受贿罪"],
+            "单位行贿": ["第三百九十三条 单位行贿罪"],
+            
+            # ==================== 妨害社会管理秩序罪（第六章）====================
+            "妨害公务": ["第二百七十七条 妨害公务 暴力 威胁"],
+            "妨害公务罪": ["第二百七十七条 妨害公务 阻碍国家机关工作人员"],
+            "招摇撞骗": ["第二百七十九条 招摇撞骗 冒充国家机关工作人员"],
+            "伪造公文": ["第二百八十条 伪造公文印章证件"],
+            "伪造印章": ["第二百八十条 伪造公司印章"],
+            "聚众斗殴": ["第二百九十二条 聚众斗殴 首要分子 积极参加"],
+            "聚众斗殴罪": ["第二百九十二条 聚众斗殴 多次聚众斗殴 持械聚众斗殴"],
+            "寻衅滋事": ["第二百九十三条 寻衅滋事 随意殴打 追逐拦截"],
+            "寻衅滋事罪": ["第二百九十三条 寻衅滋事 强拿硬要 任意损毁 起哄闹事"],
+            "组织卖淫": ["第三百五十八条 组织卖淫罪 五年以上"],
+            "强迫卖淫": ["第三百五十八条 强迫卖淫罪"],
+            "卖淫嫖娼": ["第三百五十九条 引诱容留介绍卖淫"],
+            "赌博": ["第三百零三条 赌博罪 开设赌场"],
+            "赌博罪": ["第三百零三条 赌博 以营利为目的 聚众赌博"],
+            "开设赌场": ["第三百零三条 开设赌场罪"],
+            "伪证": ["第三百零五条 伪证罪 虚假证明 证人"],
+            "伪证罪": ["第三百零五条 伪证 虚假证明 隐匿罪证"],
+            "包庇": ["第三百一十条 包庇罪 窝藏 隐瞒"],
+            "窝藏": ["第三百一十条 窝藏包庇罪 明知是犯罪的人"],
+            "掩饰隐瞒犯罪所得": ["第三百一十二条 掩饰隐瞒犯罪所得 销赃"],
+            "销赃": ["第三百一十二条 掩饰隐瞒犯罪所得"],
+            "洗钱": ["第一百九十一条 洗钱罪 掩饰隐瞒"],
+            "拒不执行判决裁定": ["第三百一十三条 拒不执行判决裁定罪"],
+            "脱逃": ["第三百一十六条 脱逃罪 依法被关押的犯罪分子"],
+            
+            # ==================== 破坏社会主义市场经济秩序罪（第三章）====================
+            "生产销售伪劣产品": ["第一百四十条 生产销售伪劣产品罪"],
+            "假冒注册商标": ["第二百一十三条 假冒注册商标罪"],
+            "假冒专利": ["第二百一十六条 假冒专利罪"],
+            "侵犯著作权": ["第二百一十七条 侵犯著作权罪"],
+            "侵犯商业秘密": ["第二百一十九条 侵犯商业秘密罪"],
+            "合同诈骗": ["第二百二十四条 合同诈骗罪"],
+            "集资诈骗": ["第一百九十二条 集资诈骗罪"],
+            "贷款诈骗": ["第一百九十三条 贷款诈骗罪"],
+            "票据诈骗": ["第一百九十四条 票据诈骗罪"],
+            "信用卡诈骗": ["第一百九十六条 信用卡诈骗罪 恶意透支"],
+            "保险诈骗": ["第一百九十八条 保险诈骗罪"],
+            "逃税": ["第二百零一条 逃税罪 偷税"],
+            "偷税": ["第二百零一条 逃税罪"],
+            "虚开增值税发票": ["第二百零五条 虚开增值税专用发票罪"],
+            "非法吸收公众存款": ["第一百七十六条 非法吸收公众存款罪"],
+            "非法经营": ["第二百二十五条 非法经营罪"],
+            "伪造货币": ["第一百七十条 伪造货币罪"],
+            "持有使用假币": ["第一百七十二条 持有使用假币罪"],
+            "高利转贷": ["第一百七十五条 高利转贷罪"],
+            "骗取贷款": ["第一百七十五条之一 骗取贷款罪"],
+            "操纵证券市场": ["第一百八十二条 操纵证券市场罪"],
+            "内幕交易": ["第一百八十条 内幕交易罪"],
+            
+            # ==================== 渎职罪（第九章）====================
+            "滥用职权": ["第三百九十七条 滥用职权罪 玩忽职守罪"],
+            "玩忽职守": ["第三百九十七条 玩忽职守罪 致使公共财产"],
+            "徇私枉法": ["第三百九十九条 徇私枉法罪 枉法裁判"],
+            "枉法裁判": ["第三百九十九条 枉法裁判罪"],
+            "帮助犯罪分子逃避处罚": ["第四百一十七条 帮助犯罪分子逃避处罚罪"],
+            "私放在押人员": ["第四百条 私放在押人员罪"],
+            
+            # ==================== 刑罚制度（总则）====================
+            "正当防卫": ["第二十条 正当防卫 防卫过当 不负刑事责任 不法侵害"],
+            "防卫": ["第二十条 正当防卫 防卫过当"],
+            "防卫过当": ["第二十条 防卫过当 应当减轻或者免除处罚"],
+            "紧急避险": ["第二十一条 紧急避险 避免危险"],
+            "自首": ["第六十七条 自首 从轻处罚 减轻处罚 自动投案"],
+            "立功": ["第六十八条 立功 重大立功 减轻处罚"],
+            "累犯": ["第六十五条 累犯 从重处罚 五年以内"],
+            "缓刑": ["第七十二条 缓刑 宣告缓刑 三年以下有期徒刑", "第七十三条 缓刑考验期"],
+            "减刑": ["第七十八条 减刑 悔改表现 立功表现"],
+            "假释": ["第八十一条 假释 服刑期间 不致再危害社会"],
+            "未成年": ["第十七条 未成年人 刑事责任年龄 从轻减轻"],
+            "刑事责任年龄": ["第十七条 刑事责任年龄 十四周岁 十六周岁 十二周岁"],
+            "从轻": ["第六十七条 从轻处罚", "第十七条 从轻减轻"],
+            "减轻": ["第六十三条 减轻处罚 法定刑以下"],
+            "从重": ["第六十五条 从重处罚"],
+            "共同犯罪": ["第二十五条 共同犯罪 二人以上共同故意"],
+            "主犯": ["第二十六条 主犯 组织领导 主要作用"],
+            "从犯": ["第二十七条 从犯 次要辅助作用"],
+            "教唆犯": ["第二十九条 教唆犯 教唆他人犯罪"],
+            "犯罪预备": ["第二十二条 犯罪预备 为了犯罪准备工具"],
+            "犯罪未遂": ["第二十三条 犯罪未遂 已经着手实行犯罪"],
+            "犯罪中止": ["第二十四条 犯罪中止 自动放弃犯罪"],
+            "追诉时效": ["第八十七条 追诉时效 经过一定期限不再追诉"],
+            "死刑": ["第四十八条 死刑 罪行极其严重", "第四十九条 死刑适用限制"],
+            "无期徒刑": ["第四十六条 无期徒刑"],
+            "有期徒刑": ["第四十五条 有期徒刑 六个月以上十五年以下"],
+            "拘役": ["第四十二条 拘役 一个月以上六个月以下"],
+            "管制": ["第三十八条 管制 三个月以上二年以下"],
+            "罚金": ["第五十二条 罚金 根据犯罪情节确定"],
+            "没收财产": ["第五十九条 没收财产"],
+            "剥夺政治权利": ["第五十四条 剥夺政治权利"],
+            "数罪并罚": ["第六十九条 数罪并罚 判决宣告以前"],
+        }
+        
+        enhanced_queries = [query]  # 原始查询始终保留
+        matched_keywords = []
+        
+        # 匹配所有相关关键词
+        for keyword, expansions in crime_mappings.items():
+            if keyword in query:
+                enhanced_queries.extend(expansions)
+                matched_keywords.append(keyword)
+        
+        # 如果没有匹配到任何关键词，尝试通用法律查询增强
+        if not matched_keywords:
+            enhanced_queries.append(f"刑法 {query} 处罚")
+            enhanced_queries.append(f"{query} 有期徒刑 罚金")
+        
+        return enhanced_queries
+    
+    def _parallel_retrieve_statutes(
+        self, 
+        enhanced_queries: List[str], 
+        vectorstores: List,
+        statute_k: int,
+        seen_doc_ids: set
+    ) -> List[Document]:
+        """
+        【短期优化】并行检索法条
+        使用ThreadPoolExecutor并行查询多个向量库
+        """
+        statute_docs = []
+        lock = threading.Lock()
+        
+        def retrieve_from_vs(vs, eq):
+            """从单个向量库检索"""
+            try:
+                results = vs.similarity_search_with_score(
+                    eq,
+                    k=statute_k * 2,
+                    filter={"type": "statute"}
+                )
+                return results
+            except Exception as e:
+                print(f"[警告] 法条检索失败: {e}")
+                return []
+        
+        try:
+            with ThreadPoolExecutor(max_workers=MAX_PARALLEL_WORKERS) as executor:
+                futures = []
+                for eq in enhanced_queries[:3]:  # 限制增强查询数量
+                    for vs in vectorstores:
+                        if vs:
+                            future = executor.submit(retrieve_from_vs, vs, eq)
+                            futures.append(future)
+                
+                # 收集结果
+                for future in as_completed(futures, timeout=PARALLEL_RETRIEVAL_TIMEOUT):
+                    try:
+                        results = future.result()
+                        for doc, score in results:
+                            with lock:
+                                doc_id = doc.metadata.get("doc_id", id(doc))
+                                if doc_id not in seen_doc_ids:
+                                    seen_doc_ids.add(doc_id)
+                                    doc.metadata["relevance_score"] = score
+                                    statute_docs.append(doc)
+                    except Exception as e:
+                        print(f"[警告] 并行检索异常: {e}")
+        except Exception as e:
+            print(f"[警告] 并行检索器初始化失败: {e}")
+        
+        return statute_docs
+    
+    def _parallel_retrieve_cases(
+        self,
+        query: str,
+        vectorstores: List,
+        case_k: int,
+        seen_doc_ids: set
+    ) -> List[Document]:
+        """
+        【短期优化】并行检索案例
+        使用ThreadPoolExecutor并行查询多个向量库
+        """
+        case_docs = []
+        lock = threading.Lock()
+        
+        def retrieve_from_vs(vs):
+            """从单个向量库检索"""
+            try:
+                results = vs.similarity_search_with_score(
+                    query,
+                    k=case_k * 2,
+                    filter={"type": "case"}
+                )
+                return results
+            except Exception as e:
+                print(f"[警告] 案例检索失败: {e}")
+                return []
+        
+        try:
+            with ThreadPoolExecutor(max_workers=MAX_PARALLEL_WORKERS) as executor:
+                futures = [executor.submit(retrieve_from_vs, vs) for vs in vectorstores if vs]
+                
+                # 收集结果
+                for future in as_completed(futures, timeout=PARALLEL_RETRIEVAL_TIMEOUT):
+                    try:
+                        results = future.result()
+                        for doc, score in results:
+                            with lock:
+                                doc_id = doc.metadata.get("doc_id", id(doc))
+                                if doc_id not in seen_doc_ids:
+                                    seen_doc_ids.add(doc_id)
+                                    doc.metadata["relevance_score"] = score
+                                    case_docs.append(doc)
+                    except Exception as e:
+                        print(f"[警告] 并行检索异常: {e}")
+        except Exception as e:
+            print(f"[警告] 并行检索器初始化失败: {e}")
+        
+        return case_docs
+    
+    def _hybrid_retrieve(self, query: str, k: int = RETRIEVAL_TOP_K) -> List[Document]:
+        """
+        混合检索策略：分别检索法条和案例，然后合并
+        使用多查询增强 + 关键词过滤提高法条检索精度
+        支持多领域和单领域模式
+        【短期优化】支持并行检索多个向量库
+        
+        ChromaDB的分数越低表示越相关（L2距离）
+        """
+        statute_docs = []
+        case_docs = []
+        seen_doc_ids = set()
+        
+        statute_k = max(4, k // 2 + 1)  # 法条数量
+        case_k = k - statute_k + 2  # 案例数量
+        
+        # 获取要使用的向量库列表
+        vectorstores = []
+        if getattr(self, 'multi_domain_mode', False) and hasattr(self, 'vectorstores_multi'):
+            # 多领域模式：使用所有领域的向量库
+            vectorstores = [item['vectorstore'] for item in self.vectorstores_multi.values() if 'vectorstore' in item]
+        elif getattr(self, 'vectorstore', None):
+            # 单领域模式：使用单一向量库
+            vectorstores = [self.vectorstore]
+        else:
+            print("[错误] 未找到可用的向量库")
+            return []
+        
+        # 1. 法条检索：使用多个增强查询（支持并行）
+        enhanced_queries = self._extract_crime_keywords(query)
+        
+        if ENABLE_PARALLEL_RETRIEVAL and len(vectorstores) > 1:
+            # 并行检索多个向量库
+            statute_docs = self._parallel_retrieve_statutes(
+                enhanced_queries, vectorstores, statute_k, seen_doc_ids
+            )
+        else:
+            # 串行检索
+            for eq in enhanced_queries:
+                for vs in vectorstores:
+                    if not vs: continue
+                    try:
+                        results = vs.similarity_search_with_score(
+                            eq,
+                            k=statute_k * 2,
+                            filter={"type": "statute"}
+                        )
+                        
+                        for doc, score in results:
+                            doc_id = doc.metadata.get("doc_id", id(doc))
+                            if doc_id not in seen_doc_ids:
+                                seen_doc_ids.add(doc_id)
+                                doc.metadata["relevance_score"] = score
+                                statute_docs.append(doc)
+                                
+                    except Exception as e:
+                        print(f"[警告] 法条检索失败: {e}")
+        
+        # 2. 案例检索：使用原始查询（支持并行）
+        if ENABLE_PARALLEL_RETRIEVAL and len(vectorstores) > 1:
+            # 并行检索多个向量库
+            case_docs = self._parallel_retrieve_cases(
+                query, vectorstores, case_k, seen_doc_ids
+            )
+        else:
+            # 串行检索
+            for vs in vectorstores:
+                if not vs: continue
+                try:
+                    case_results = vs.similarity_search_with_score(
+                        query, 
+                        k=case_k * 2,
+                        filter={"type": "case"}
+                    )
+                    
+                    for doc, score in case_results:
+                        doc_id = doc.metadata.get("doc_id", id(doc))
+                        if doc_id not in seen_doc_ids:
+                            seen_doc_ids.add(doc_id)
+                            doc.metadata["relevance_score"] = score
+                            case_docs.append(doc)
+                            
+                except Exception as e:
+                    print(f"[警告] 案例检索失败: {e}")
+        
+        # 3. 方案C增强：关键词重排序 + 语义相关性融合
+        def get_keyword_score(doc):
+            """计算关键词匹配得分 - 增强版"""
+            base_score = doc.metadata.get("relevance_score", 999)
+            content = doc.page_content.lower()
+            query_lower = query.lower()
+            
+            # 扩展的关键词列表（覆盖更多罪名）
+            crime_keywords = [
+                # 侵犯人身权利
+                "故意杀人", "故意伤害", "强奸", "绑架", "拐卖", "非法拘禁",
+                # 侵犯财产
+                "盗窃", "抢劫", "诈骗", "抢夺", "敲诈勒索", "侵占", "挪用",
+                # 危害公共安全
+                "交通肇事", "危险驾驶", "醉驾", "放火", "爆炸",
+                # 妨害社会管理
+                "聚众斗殴", "寻衅滋事", "赌博", "伪证", "包庇", "妨害公务",
+                # 贪污贿赂
+                "贪污", "受贿", "行贿", "挪用公款",
+                # 毒品犯罪
+                "毒品", "贩毒", "走私",
+                # 刑罚制度
+                "正当防卫", "紧急避险", "自首", "立功", "累犯",
+                "缓刑", "减刑", "假释", "未成年", "共同犯罪",
+                "从轻", "减轻", "从重", "主犯", "从犯"
+            ]
+            
+            bonus = 0
+            matched_count = 0
+            
+            # 统计匹配的关键词数量
+            for kw in crime_keywords:
+                if kw in query_lower and kw in content:
+                    matched_count += 1
+                    bonus -= 0.5  # 每个匹配关键词降低0.5分
+            
+            # 额外奖励：多个关键词匹配
+            if matched_count >= 2:
+                bonus -= 0.5  # 额外奖励
+            
+            # 精确条款匹配（最高优先级）
+            article_nums = re.findall(r'第[一二三四五六七八九十百千零\d]+条', query)
+            for num in article_nums:
+                if num in content:
+                    bonus -= 2.0  # 精确条款匹配
+            
+            # 查询词直接出现在内容中
+            query_words = [w for w in query_lower.split() if len(w) >= 2]
+            for word in query_words:
+                if word in content:
+                    bonus -= 0.3
+            
+            return base_score + bonus
+        
+        # 对法条进行重排序
+        statute_docs.sort(key=get_keyword_score)
+        case_docs.sort(key=lambda d: d.metadata.get("relevance_score", 999))
+        
+        # 4. 合并结果：法条优先
+        final_docs = []
+        final_docs.extend(statute_docs[:statute_k])
+        final_docs.extend(case_docs[:case_k])
+        
+        # 5. 回退检索
+        if len(final_docs) == 0:
+            for vs in vectorstores:
+                if not vs: continue
+                try:
+                    results = vs.similarity_search_with_score(query, k=k)
+                    for doc, score in results:
+                        doc.metadata["relevance_score"] = score
+                        final_docs.append(doc)
+                except Exception as e:
+                    print(f"[警告] 回退检索失败: {e}")
+        
+        return final_docs[:k]
+    
+    def _init_llm(self):
+        """初始化大语言模型"""
+        self.llm = ChatOpenAI(
+            model=LLM_MODEL,
+            temperature=LLM_TEMPERATURE,
+            max_tokens=LLM_MAX_TOKENS,
+            openai_api_base=SILICONFLOW_BASE_URL,
+            openai_api_key=SILICONFLOW_API_KEY,
+            streaming=self.streaming
+        )
+    
+    def _init_chains(self):
+        """初始化RAG链 - 简化版（不依赖传统chains）"""
+        # 由于使用了混合检索策略，不再需要传统的chains
+        # 直接在query方法中处理检索和生成
+        self.history_aware_retriever = None
+        self.rag_chain = None
+    
+    def _format_chat_history(self) -> List:
+        """格式化聊天历史为LangChain消息格式"""
+        messages = []
+        for human, ai in self.chat_history[-MAX_HISTORY_TURNS:]:
+            messages.append(HumanMessage(content=human))
+            messages.append(AIMessage(content=ai))
+        return messages
+    
+    def _format_history_text(self) -> str:
+        """格式化聊天历史为文本格式，用于提示词"""
+        if not self.chat_history:
+            return "无历史对话"
+        
+        history_text = []
+        for human, ai in self.chat_history[-MAX_HISTORY_TURNS:]:
+            history_text.append(f"用户: {human[:200]}...")
+            history_text.append(f"助手: {ai[:300]}...")
+        return "\n".join(history_text[-6:])  # 最近3轮对话
+    
+    def _extract_citations(self, docs: List[Document]) -> List[Citation]:
+        """从检索文档中提取引用信息"""
+        citations = []
+        for i, doc in enumerate(docs):
+            # 尝试从多个字段获取相似度分数
+            score = (
+                doc.metadata.get("relevance_score") or
+                doc.metadata.get("score") or
+                doc.metadata.get("_score") or
+                0.7  # 默认给予中等相关性
+            )
+            
+            # 改进来源标注 - 包含更多元数据信息
+            source_parts = [doc.metadata.get("source", "未知来源")]
+            
+            # 添加类型信息
+            doc_type = doc.metadata.get("type", "unknown")
+            if doc_type == "statute":
+                article = doc.metadata.get("article", "")
+                if article:
+                    source_parts.append(f"({article})")
+            elif doc_type == "case":
+                accusation = doc.metadata.get("accusation", "")
+                case_id = doc.metadata.get("case_id", "")
+                if accusation:
+                    source_parts.append(f"【{accusation}】")
+                if case_id:
+                    source_parts.append(f"(案号:{case_id})")
+            
+            source_display = "".join(source_parts)
+            
+            citation = Citation(
+                source=source_display,
+                doc_type=doc_type,
+                content=doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
+                relevance_score=float(score),
+                metadata=doc.metadata
+            )
+            citations.append(citation)
+        return citations
+
+    def _attach_similarity_scores(self, query: str, docs: List[Document]) -> List[Document]:
+        """为检索到的文档补充相似度分数。"""
+        if not docs:
+            return docs
+        try:
+            # 预取更多候选，以便覆盖 context 中的文档
+            k = max(len(docs), RETRIEVAL_TOP_K * 2)
+            score_map = {}
+            
+            # 获取要使用的向量库列表
+            if self.multi_domain_mode:
+                vectorstores = [vs['vectorstore'] for vs in self.vectorstores_multi.values()]
+            else:
+                vectorstores = [self.vectorstore]
+            
+            # 从所有向量库中获取分数
+            for vs in vectorstores:
+                try:
+                    scored = vs.similarity_search_with_score(query, k=k)
+                    for d, score in scored:
+                        doc_id = d.metadata.get("doc_id")
+                        if doc_id and doc_id not in score_map:
+                            score_map[doc_id] = score
+                except Exception:
+                    continue
+            
+            for doc in docs:
+                doc_id = doc.metadata.get("doc_id")
+                if doc_id and doc_id in score_map:
+                    doc.metadata["relevance_score"] = score_map[doc_id]
+            return docs
+        except Exception:
+            return docs
+    
+    def _calculate_confidence(self, docs: List[Document]) -> float:
+        """计算回答置信度"""
+        if not docs:
+            return 0.0
+        
+        # ChromaDB的分数越低越相关，需要转换
+        scores = []
+        has_statute = False
+        
+        for doc in docs:
+            raw_score = doc.metadata.get("relevance_score", 1.0)
+            # 转换为0-1的相关性分数（分数越低越相关）
+            relevance = max(0, 1 - raw_score / 2)
+            scores.append(relevance)
+            
+            if doc.metadata.get("type") == "statute":
+                has_statute = True
+        
+        max_score = max(scores) if scores else 0.0
+        avg_score = sum(scores) / len(scores) if scores else 0.0
+        
+        # 如果有法条文档，置信度提升
+        statute_bonus = 0.1 if has_statute else 0
+        
+        # 综合计算置信度
+        confidence = 0.4 * max_score + 0.4 * avg_score + 0.2 * min(len(docs) / RETRIEVAL_TOP_K, 1.0) + statute_bonus
+        
+        return round(min(confidence, 0.95), 2)
+    
+    def query(self, question: str) -> RAGResponse:
+        """
+        处理用户查询（使用混合检索策略 + 超范围检测 + Reranker优化）
+        
+        优化方案：
+        - 方案A: 超范围检测 - 关键词 + LLM二次验证
+        - 方案B: Reranker重排序 - 提升相关文档排名
+        - 方案C: 混合检索 + 重排序
+        - 方案D: 优化提示词 + 事实核查
+        - 方案E: 幻觉检测 - 验证答案与检索内容一致性
+        
+        Args:
+            question: 用户问题
+            
+        Returns:
+            RAGResponse: 包含答案、引用、置信度等信息
+        """
+        # ==================== 方案A: 超范围检测（双重验证）====================
+        # 第一层：关键词检测
+        is_out_of_scope, detected_domain = self._detect_out_of_scope(question)
+        
+        # 第二层：LLM判别器验证（仅在关键词未检测到超范围时启用）
+        if not is_out_of_scope and RERANKER_AVAILABLE and ENABLE_RERANKER:
+            try:
+                scope_result = check_scope(question)
+                if not scope_result.is_in_scope and scope_result.confidence > 0.7:
+                    is_out_of_scope = True
+                    detected_domain = scope_result.detected_domain
+            except Exception as e:
+                print(f"[警告] LLM范围检测失败: {e}")
+        
+        if is_out_of_scope:
+            # 生成超范围拒绝响应
+            out_of_scope_answer = OUT_OF_SCOPE_RESPONSE.format(detected_domain=detected_domain)
+            self.chat_history.append((question, out_of_scope_answer))
+            return RAGResponse(
+                answer=out_of_scope_answer,
+                citations=[],
+                confidence=0.1,  # 低置信度表示这是拒绝回答
+                is_uncertain=True,
+                retrieved_docs=[]
+            )
+        
+        # 格式化历史对话
+        chat_history = self._format_chat_history()
+        
+        # ==================== 方案C: 混合检索 + Reranker重排序 ====================
+        # 使用混合检索策略获取文档
+        docs = self._hybrid_retrieve(question, k=RETRIEVAL_TOP_K * 2)  # 检索更多，供重排序筛选
+        
+        # 使用Reranker进行重排序和相关性过滤
+        # 优化：仅在非超范围问题且文档充足时启用Reranker，避免不必要调用
+        if RERANKER_AVAILABLE and ENABLE_RERANKER and docs and len(docs) > 3:
+            try:
+                reranked_docs = rerank_documents(question, docs[:5], top_k=RERANKER_TOP_K)  # 仅处理top5
+                # 只保留相关文档
+                docs = [rd.document for rd in reranked_docs if rd.is_relevant]
+                # 如果重排序后文档数过少，回退到原始检索结果
+                if not docs or len(docs) < 3:
+                    docs = self._hybrid_retrieve(question, k=RETRIEVAL_TOP_K)
+                # 更新相关性分数
+                for i, rd in enumerate(reranked_docs):
+                    if rd.is_relevant and i < len(docs):
+                        docs[i].metadata["reranker_score"] = rd.relevance_score
+            except Exception as e:
+                print(f"[警告] Reranker重排序失败: {e}")
+                docs = docs[:RETRIEVAL_TOP_K]
+        else:
+            docs = docs[:RETRIEVAL_TOP_K]
+        
+        # 检测检索结果相关性是否过低（第二道防线）
+        if self._is_low_relevance(docs):
+            low_relevance_answer = """抱歉，在现有的刑法数据库中未找到与您问题高度相关的法条。
+
+**可能的原因**：
+1. 问题涉及的具体法律规定不在当前知识库覆盖范围内
+2. 问题表述可能需要更具体的法律术语
+3. 该问题可能涉及其他法律领域
+
+**建议**：
+- 请尝试使用更具体的法律术语描述问题
+- 如果涉及具体案件，建议咨询专业刑事律师
+- 如有其他刑法相关问题，欢迎继续咨询"""
+            self.chat_history.append((question, low_relevance_answer))
+            return RAGResponse(
+                answer=low_relevance_answer,
+                citations=[],
+                confidence=0.2,
+                is_uncertain=True,
+                retrieved_docs=docs
+            )
+        
+        # 如果没有检索到有效文档
+        if not docs:
+            self.chat_history.append((question, UNCERTAIN_RESPONSE))
+            return RAGResponse(
+                answer=UNCERTAIN_RESPONSE,
+                citations=[],
+                confidence=0.0,
+                is_uncertain=True,
+                retrieved_docs=[]
+            )
+        
+        # 构建上下文
+        context_parts = []
+        for i, doc in enumerate(docs, 1):
+            doc_type = doc.metadata.get("type", "unknown")
+            source = doc.metadata.get("source", "未知来源")
+            
+            if doc_type == "statute":
+                article = doc.metadata.get("article", "")
+                context_parts.append(f"[来源{i}] 【法条】{source} {article}\n{doc.page_content}")
+            else:
+                accusation = doc.metadata.get("accusation", "")
+                context_parts.append(f"[来源{i}] 【案例】{source}（{accusation}）\n{doc.page_content}")
+        
+        context_text = "\n\n".join(context_parts)
+        
+        # 直接调用LLM生成回答
+        from langchain_core.messages import HumanMessage, SystemMessage
+        
+        # ==================== 方案D: 优化提示词 - 增强事实核查指令（精炼版以减少生成token）====================
+        history_text = self._format_history_text()
+        qa_prompt = f"""你是法律智能助手，专注中国刑法领域。
+
+【系统说明】
+本系统涵盖刑事犯罪认定、量刑标准、刑事责任年龄、自首立功、正当防卫等。
+
+【回答要求】
+1. 严格使用检索内容，不得编造法条或案例
+2. 优先引用法条原文及条款号，标注[来源X]
+3. 分析构成要件、量刑因素、特殊情形
+4. 不确定时明确告知用户
+
+【回答格式（简洁版）】
+## 核心答案
+简明概括核心结论。
+
+## 法律依据  
+引用相关法条原文[来源X]，简要解读。
+
+## 具体分析
+分析构成要件、量刑因素、特殊情形。
+
+## 重要提示
+注意事项和建议。
+
+【检索内容】
+{context_text}
+
+【用户问题】
+{question}
+
+【对话历史】
+{history_text}
+
+请提供准确、简洁的法律解答。"""
+        
+        messages = [HumanMessage(content=qa_prompt)]
+        
+        response = self.llm.invoke(messages)
+        answer = response.content
+        
+        # ==================== 方案D: 混合幻觉检测策略 ====================
+        # 高风险→LLM检测（准确）| 正常→不检测（快速）| 超范围→不检测（已拒答）
+        hallucination_warning = ""
+        should_check, use_llm = self._should_check_hallucination(is_out_of_scope, docs)
+        
+        if should_check and RERANKER_AVAILABLE:
+            try:
+                import time
+                start = time.time()
+                # 对高风险问题使用LLM深度检测，对低风险使用本地快速检测
+                hallucination_result = check_hallucination(question, answer, docs, use_llm=use_llm)
+                elapsed = time.time() - start
+                
+                # 如果检测耗时过长，跳过
+                if elapsed > HALLUCINATION_CHECK_TIMEOUT:
+                    print(f"[警告] 幻觉检测耗时过长 ({elapsed:.2f}s)，已跳过")
+                    hallucination_warning = ""
+                elif hallucination_result.risk_level in ["medium", "high"]:
+                    hallucination_warning = f"\n⚠️  注意：该回答可能存在幻觉风险（{hallucination_result.risk_level}），请谨慎参考。"
+                    if hallucination_result.problematic_claims:
+                        hallucination_warning += f"\n问题陈述：{', '.join(hallucination_result.problematic_claims)}"
+            except Exception as e:
+                print(f"[警告] 幻觉检测出错: {e}")
+                hallucination_warning = ""
+        
+        answer = answer.strip()
+        if hallucination_warning:
+            answer += hallucination_warning
+        
+        # 提取引用
+        citations = self._extract_citations(docs)
+        
+        # 计算置信度
+        confidence = self._calculate_confidence(docs)
+        
+        # 判断是否为不确定回答
+        is_uncertain = confidence < CONFIDENCE_THRESHOLD or len(docs) == 0
+        
+        # 如果置信度过低，使用不确定回答模板
+        if is_uncertain and len(docs) == 0:
+            answer = UNCERTAIN_RESPONSE
+        
+        # 更新对话历史
+        self.chat_history.append((question, answer))
+        
+        return RAGResponse(
+            answer=answer,
+            citations=citations,
+            confidence=confidence,
+            is_uncertain=is_uncertain,
+            retrieved_docs=docs
+        )
+    
+    def query_stream(self, question: str) -> Generator[str, None, RAGResponse]:
+        """
+        流式处理用户查询（使用混合检索 + 超范围检测 + Reranker）
+        
+        Args:
+            question: 用户问题
+            
+        Yields:
+            str: 答案片段
+            
+        Returns:
+            RAGResponse: 完整响应（在生成器结束时）
+        """
+        # 超范围检测（双重验证）
+        is_out_of_scope, detected_domain = self._detect_out_of_scope(question)
+        
+        # LLM二次验证
+        if not is_out_of_scope and RERANKER_AVAILABLE and ENABLE_RERANKER:
+            try:
+                scope_result = check_scope(question)
+                if not scope_result.is_in_scope and scope_result.confidence > 0.7:
+                    is_out_of_scope = True
+                    detected_domain = scope_result.detected_domain
+            except Exception:
+                pass
+        
+        if is_out_of_scope:
+            out_of_scope_answer = OUT_OF_SCOPE_RESPONSE.format(detected_domain=detected_domain)
+            yield out_of_scope_answer
+            self.chat_history.append((question, out_of_scope_answer))
+            return RAGResponse(
+                answer=out_of_scope_answer,
+                citations=[],
+                confidence=0.1,
+                is_uncertain=True,
+                retrieved_docs=[]
+            )
+        
+        # 使用混合检索 + Reranker
+        docs = self._hybrid_retrieve(question, k=RETRIEVAL_TOP_K * 2)
+        
+        # Reranker重排序
+        if RERANKER_AVAILABLE and ENABLE_RERANKER and docs:
+            try:
+                reranked_docs = rerank_documents(question, docs, top_k=RETRIEVAL_TOP_K)
+                docs = [rd.document for rd in reranked_docs if rd.is_relevant]
+            except Exception:
+                docs = docs[:RETRIEVAL_TOP_K]
+        else:
+            docs = docs[:RETRIEVAL_TOP_K]
+        
+        # 检测相关性
+        if self._is_low_relevance(docs):
+            low_relevance_answer = """抱歉，在现有的刑法数据库中未找到与您问题高度相关的法条。建议咨询专业刑事律师。"""
+            yield low_relevance_answer
+            self.chat_history.append((question, low_relevance_answer))
+            return RAGResponse(
+                answer=low_relevance_answer,
+                citations=[],
+                confidence=0.2,
+                is_uncertain=True,
+                retrieved_docs=docs
+            )
+        
+        citations = self._extract_citations(docs)
+        confidence = self._calculate_confidence(docs)
+        is_uncertain = confidence < CONFIDENCE_THRESHOLD or len(docs) == 0
+        
+        if is_uncertain and len(docs) == 0:
+            yield UNCERTAIN_RESPONSE
+            self.chat_history.append((question, UNCERTAIN_RESPONSE))
+            return RAGResponse(
+                answer=UNCERTAIN_RESPONSE,
+                citations=[],
+                confidence=0.0,
+                is_uncertain=True,
+                retrieved_docs=[]
+            )
+        
+        # 构建上下文
+        context_parts = []
+        for i, doc in enumerate(docs, 1):
+            doc_type = doc.metadata.get("type", "unknown")
+            source = doc.metadata.get("source", "未知来源")
+            
+            if doc_type == "statute":
+                article = doc.metadata.get("article", "")
+                context_parts.append(f"[来源{i}] 【法条】{source} {article}\n{doc.page_content}")
+            else:
+                accusation = doc.metadata.get("accusation", "")
+                context_parts.append(f"[来源{i}] 【案例】{source}（{accusation}）\n{doc.page_content}")
+        
+        context_text = "\n\n".join(context_parts)
+        
+        # 构建提示词（增强事实核查）
+        history_text = self._format_history_text()
+        qa_prompt = f"""你是"法律智能助手"，一个专业的中国刑法问答AI，擅长提供详细、专业、易懂的法律解答。
+
+【回答要求 - 事实核查优先】
+1. **严格依据检索内容**：只使用检索到的法条和案例，不得编造
+2. 法条优先：必须引用检索到的《刑法》条文原文
+3. 通俗易懂：用清晰的语言解释法律术语
+4. 准确引用：标注[来源X]
+
+【回答格式】
+## 📌 核心结论
+概括问题的核心答案。
+
+## 📖 法律依据
+引用法条原文并解读。
+
+## 🔍 详细分析
+深入分析构成要件、量刑因素等。
+
+## ⚠️ 重要提示
+注意事项和建议。
+
+【检索到的上下文】
+{context_text}
+
+【用户问题】
+{question}
+
+【对话历史】
+{history_text}
+
+请提供详尽、专业的解答。"""
+        
+        # 流式生成回答
+        full_answer = ""
+        for chunk in self.llm.stream([HumanMessage(content=qa_prompt)]):
+            if chunk.content:
+                full_answer += chunk.content
+                yield chunk.content
+        
+        self.chat_history.append((question, full_answer))
+        
+        return RAGResponse(
+            answer=full_answer,
+            citations=citations,
+            confidence=confidence,
+            is_uncertain=is_uncertain,
+            retrieved_docs=docs
+        )
+    
+    def clear_history(self):
+        """清空对话历史"""
+        self.chat_history = []
+    
+    def get_history(self) -> List[Tuple[str, str]]:
+        """获取对话历史"""
+        return self.chat_history.copy()
+    
+    def search_similar(self, query: str, k: int = 5) -> List[Document]:
+        """
+        直接搜索相似文档（不经过LLM）
+        
+        Args:
+            query: 搜索查询
+            k: 返回数量
+            
+        Returns:
+            List[Document]: 相似文档列表
+        """
+        if self.multi_domain_mode:
+            # 多领域模式：从所有领域检索并合并
+            all_docs = []
+            seen_doc_ids = set()
+            for vs_info in self.vectorstores_multi.values():
+                try:
+                    docs = vs_info['vectorstore'].similarity_search(query, k=k)
+                    for doc in docs:
+                        doc_id = doc.metadata.get("doc_id", id(doc))
+                        if doc_id not in seen_doc_ids:
+                            seen_doc_ids.add(doc_id)
+                            all_docs.append(doc)
+                except Exception as e:
+                    print(f"[警告] 检索失败: {e}")
+            return all_docs[:k]
+        else:
+            # 单领域模式
+            return self.vectorstore.similarity_search(query, k=k)
+
+
+# 便捷函数：获取默认RAG引擎实例
+_default_engine: Optional[JurisRAGEngine] = None
+
+def get_rag_engine(streaming: bool = True) -> JurisRAGEngine:
+    """获取RAG引擎单例"""
+    global _default_engine
+    if _default_engine is None:
+        _default_engine = JurisRAGEngine(streaming=streaming)
+    return _default_engine
+
+
+def get_retriever():
+    """兼容旧接口：获取检索器"""
+    engine = get_rag_engine()
+    return engine.retriever
+
+
+def get_rag_chain():
+    """兼容旧接口：获取RAG链"""
+    engine = get_rag_engine()
+    return engine.rag_chain
+
+
+# --- 命令行测试代码 ---
+if __name__ == "__main__":
+    print("🚀 正在初始化 Juris-RAG 引擎...")
+    
+    try:
+        engine = JurisRAGEngine(streaming=False)
+        print("✅ 引擎初始化成功！\n")
+        
+        # 测试问题列表
+        test_questions = [
+            "故意杀人罪怎么判刑？",
+            "如果是情节较轻的呢？",  # 测试多轮对话
+            "盗窃罪的量刑标准是什么？"
+        ]
+        
+        for q in test_questions:
+            print(f"👤 用户: {q}")
+            print("-" * 50)
+            
+            response = engine.query(q)
+            
+            print(f"🤖 助手: {response.answer}")
+            print(f"\n📊 置信度: {response.confidence}")
+            print(f"❓ 不确定回答: {response.is_uncertain}")
+            
+            if response.citations:
+                print("\n📚 引用来源:")
+                for i, citation in enumerate(response.citations, 1):
+                    print(f"   [{i}] {citation.source} ({citation.doc_type})")
+                    if citation.metadata.get("accusation"):
+                        print(f"       罪名: {citation.metadata['accusation']}")
+            
+            print("\n" + "=" * 60 + "\n")
+            
+    except FileNotFoundError as e:
+        print(f"❌ 错误: {e}")
+        print("请先运行数据处理脚本构建向量库。")
+    except Exception as e:
+        print(f"❌ 发生错误: {e}")
