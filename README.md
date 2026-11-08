@@ -29,7 +29,7 @@
 
 ## 📝 提交须知
 
-1. 请进入 [LLM-Course-Assignments-2025](./LLM-Course-Assignments-2026) 文件夹。
+1. 请进入 [LLM-Course-Assignments-2026](./LLM-Course-Assignments-2026) 文件夹。
 2. 按照该目录下的 `README` 或作业文档要求进行操作。
 3. 提交前请确保代码可以通过测试。
 
