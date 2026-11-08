@@ -11,15 +11,25 @@
 👉 **[点击此处进入 2025 年作业文件夹](./LLM-Course-Assignments-2025)**
 
 ---
+## ⚠️ 2026 年最新通知
+
+**请注意：2026 年度的课程作业要求、评分标准及提交指南均已更新。**
+
+所有 2026 年的相关资料都位于 `LLM-Course-Assignments-2026` 文件夹下。在开始作业前，请务必仔细阅读该文件夹内的说明文档。
+
+👉 **[点击此处进入 2026 年作业文件夹](./LLM-Course-Assignments-2026)**
+
+---
 
 ## 📂 快速导航
 
-- **[LLM-Course-Assignments-2025](./LLM-Course-Assignments-2025)**: **(当前学期)** 2025 年作业说明。
+- **[LLM-Course-Assignments-2025](./LLM-Course-Assignments-2025)**: 2025 年作业说明。
+- **[LLM-Course-Assignments-2026](./LLM-Course-Assignments-2026)**: **(当前学期)** 2026 年作业说明。
 - **[教程](./tutorial.md)**: 新手教程。
 
 ## 📝 提交须知
 
-1. 请进入 [LLM-Course-Assignments-2025](./LLM-Course-Assignments-2025) 文件夹。
+1. 请进入 [LLM-Course-Assignments-2025](./LLM-Course-Assignments-2026) 文件夹。
 2. 按照该目录下的 `README` 或作业文档要求进行操作。
 3. 提交前请确保代码可以通过测试。
 
