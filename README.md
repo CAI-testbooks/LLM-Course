@@ -12,7 +12,7 @@
 
 ---
 
-所有 2025 年的相关资料都位于 `LLM-Course-Assignments-2025` 文件夹下。在开始作业前，请务必仔细阅读该文件夹内的说明文档。
+所有 2025 年的相关资料都位于 `LLM-Course-Assignments-2025` 文件夹下。
 
 👉 **[点击此处进入 2025 年作业文件夹](./LLM-Course-Assignments-2025)**
 
