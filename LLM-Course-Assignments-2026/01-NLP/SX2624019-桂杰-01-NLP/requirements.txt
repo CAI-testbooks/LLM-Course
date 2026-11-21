@@ -1,0 +1,6 @@
+streamlit>=1.38,<2
+chromadb>=0.5.5,<2
+requests>=2.31,<3
+python-dotenv>=1.0,<2
+datasets>=3.0,<5
+pandas>=2.1,<3
