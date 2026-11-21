@@ -1,0 +1,203 @@
+{
+  "general_label": "General",
+  "processes": [
+    {
+      "key": "FDM",
+      "name": "FDM/FFF 熔融沉积成形",
+      "priority": 100,
+      "keywords": [
+        "fdm",
+        "fff",
+        "fused deposition",
+        "fused filament",
+        "filament extrusion",
+        "material extrusion",
+        "熔融沉积",
+        "熔融挤出",
+        "丝材"
+      ],
+      "queries": [
+        "fused deposition modeling FDM fused filament fabrication process parameters defects",
+        "FDM 3D printing thermoplastic polymer mechanical properties PLA ABS PETG",
+        "material extrusion additive manufacturing warping layer bonding"
+      ]
+    },
+    {
+      "key": "SLA",
+      "name": "SLA/槽式光聚合（含 DLP、LCD）",
+      "priority": 99,
+      "keywords": [
+        "sla",
+        "stereolithography",
+        "vat photopolymer",
+        "photopolymer resin",
+        "dlp",
+        "lcd printing",
+        "光固化",
+        "光敏树脂",
+        "立体光刻"
+      ],
+      "queries": [
+        "stereolithography SLA vat photopolymerization resin curing exposure dimensional accuracy",
+        "SLA photopolymer resin mechanical properties post curing defects",
+        "DLP LCD vat photopolymerization layer thickness shrinkage accuracy"
+      ]
+    },
+    {
+      "key": "SLS",
+      "name": "SLS 选择性激光烧结（高分子粉末）",
+      "priority": 98,
+      "keywords": [
+        "sls",
+        "selective laser sintering",
+        "laser sintering",
+        "polymer powder bed",
+        "激光烧结"
+      ],
+      "queries": [
+        "selective laser sintering SLS polymer powder bed process parameters mechanical properties",
+        "SLS PA12 nylon powder recycling part quality dimensional accuracy"
+      ]
+    },
+    {
+      "key": "SLM",
+      "name": "SLM/LPBF 金属激光粉末床熔融",
+      "priority": 97,
+      "keywords": [
+        "slm",
+        "lpbf",
+        "laser powder bed fusion",
+        "selective laser melting",
+        "powder bed fusion",
+        "激光粉末床",
+        "激光熔化",
+        "选区激光"
+      ],
+      "queries": [
+        "laser powder bed fusion LPBF SLM process parameters porosity defects microstructure",
+        "selective laser melting metal powder residual stress distortion mechanical properties"
+      ]
+    },
+    {
+      "key": "DED",
+      "name": "DED/定向能量沉积（含 WAAM）",
+      "priority": 96,
+      "keywords": [
+        "ded",
+        "directed energy deposition",
+        "laser metal deposition",
+        "wire arc additive",
+        "waam",
+        "定向能量沉积",
+        "电弧增材"
+      ],
+      "queries": [
+        "directed energy deposition DED process parameters deposition rate microstructure",
+        "wire arc additive manufacturing WAAM residual stress distortion"
+      ]
+    },
+    {
+      "key": "Jetting",
+      "name": "粘结剂喷射 / 材料喷射",
+      "priority": 95,
+      "keywords": [
+        "binder jetting",
+        "material jetting",
+        "polyjet",
+        "inkjet",
+        "粘结剂喷射",
+        "材料喷射"
+      ],
+      "queries": [
+        "binder jetting additive manufacturing binder saturation sintering shrinkage",
+        "material jetting polyjet photopolymer dimensional accuracy surface quality"
+      ]
+    },
+    {
+      "key": "Material",
+      "name": "材料、原料与力学表征",
+      "priority": 50,
+      "keywords": [
+        "feedstock",
+        "polymer composite",
+        "metal powder",
+        "ceramic",
+        "photopolymer",
+        "材料",
+        "复合",
+        "陶瓷",
+        "粉末",
+        "力学性能"
+      ],
+      "queries": [
+        "additive manufacturing feedstock material properties polymer composite ceramic metal powder",
+        "additive manufacturing mechanical characterization tensile fatigue anisotropy"
+      ]
+    },
+    {
+      "key": "Defect",
+      "name": "缺陷、监测与质量控制",
+      "priority": 40,
+      "keywords": [
+        "defect",
+        "porosity",
+        "warping",
+        "delamination",
+        "residual stress",
+        "quality control",
+        "in-situ monitoring",
+        "缺陷",
+        "孔隙",
+        "翘曲",
+        "变形",
+        "残余应力",
+        "监测"
+      ],
+      "queries": [
+        "additive manufacturing defects porosity cracking delamination quality control",
+        "in-situ monitoring additive manufacturing defect detection machine learning"
+      ]
+    },
+    {
+      "key": "Post",
+      "name": "后处理与工艺链",
+      "priority": 30,
+      "keywords": [
+        "post-processing",
+        "post curing",
+        "heat treatment",
+        "hot isostatic pressing",
+        "surface finishing",
+        "support removal",
+        "后处理",
+        "热处理",
+        "表面处理",
+        "去支撑"
+      ],
+      "queries": [
+        "additive manufacturing post-processing heat treatment surface finishing support removal",
+        "post curing heat treatment effect on additive manufacturing part properties"
+      ]
+    },
+    {
+      "key": "Design",
+      "name": "设计、拓扑优化与仿真",
+      "priority": 20,
+      "keywords": [
+        "topology optimization",
+        "lattice structure",
+        "design for additive manufacturing",
+        "dfam",
+        "process simulation",
+        "拓扑优化",
+        "点阵",
+        "晶格",
+        "仿真"
+      ],
+      "queries": [
+        "design for additive manufacturing topology optimization lattice structure performance",
+        "process simulation thermal history prediction additive manufacturing"
+      ]
+    }
+  ]
+}
