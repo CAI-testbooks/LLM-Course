@@ -351,9 +351,9 @@ fitness = 1{judge.success} + 0.25 × max(0, judge.score) − min(0.05, len(promp
 - **下载**：<https://github.com/Jia-JC/JailForge/releases/latest>；
 - **说明**：单文件版首次启动需解压到系统临时目录；如果系统临时目录受限，使用便携版 zip。
 
-![桌面版概览](assets/ui-dashboard.png)
+![桌面版概览](https://github.com/Jia-JC/JailForge/raw/main/docs/assets/ui-dashboard.png)
 
-![桌面版单条测试](assets/ui-single.png)
+![桌面版单条测试](https://github.com/Jia-JC/JailForge/raw/main/docs/assets/ui-single.png)
 
 ---
 
