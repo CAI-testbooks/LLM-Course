@@ -17,7 +17,7 @@
 基于遗传算法的防御感知进化攻击、5 种可消融的防御配置，以及规则/LLM 双评判器。评测指标包括
 攻击成功率（ASR）、Wilson 95% 置信区间、防御绝对/相对下降和良性样本误拦率（FPR）。
 
-当前 v0.1 已完成代码、25 项测试、CLI、Gradio Demo、离线 Mock pilot 和真实模型 pilot。
+当前 v0.1 已完成代码、29 项测试、CLI、Gradio Demo、Windows 桌面版、离线 Mock pilot 和真实模型 pilot。
 
 Mock pilot 覆盖 32 条中文抽象目标 × 12 种攻击 × 4 种防御，共 1536 个 trial：无防御 ASR 为
 23.7%，仅输入过滤降至 17.7%（绝对下降 6.0 pp），自卫系统提示降至 3.4%（下降 20.3 pp），
@@ -176,8 +176,10 @@ fitness = 1{judge.success} + 0.25 × max(0, judge.score) − min(0.05, len(promp
 - **指标**：ASR、Wilson 95% CI、防御绝对/相对下降、输入/输出拦截率、分类别 ASR、良性 FPR。
 - **缓存**：按“模型 + 完整 messages”哈希缓存，保证重跑一致并降低 API 成本。
 - **产物**：`summary.json`、`trials.jsonl`、`trials.csv`、`report.md`、`config.yaml`。
-- **Demo**：Gradio 四标签页（单条攻击、批量评测、进化攻击、关于与伦理）。
-- **测试**：25 项 pytest，覆盖攻击生成、过滤、分层防御、评判、CI、运行器、进化冒烟。
+- **桌面版**：`launcher.py` + `web/` 本地 SPA + PyInstaller EXE；支持 Mock/真实切换、
+  批量进度、进化曲线、报告/CSV 下载。
+- **Demo**：Gradio 四标签页（开发备用）。
+- **测试**：29 项 pytest，覆盖攻击生成、过滤、分层防御、评判、CI、运行器、进化冒烟、桌面服务。
 
 ---
 
@@ -337,6 +339,22 @@ fitness = 1{judge.success} + 0.25 × max(0, judge.score) − min(0.05, len(promp
 > 说明：0/160 的 95% CI 上界约 2.3%，即“真实 ASR 可能低至 0、高至 2.3%”，
 > 不能解读为“模型绝对安全”。
 
+### 5.7 桌面版交付
+
+为了让非技术用户也能直接运行，v0.1 额外交付了 Windows 桌面版：
+
+- **入口**：`launcher.py` 启动仅监听 `127.0.0.1` 的本地 HTTP 服务，`web/` 提供深色 SPA；
+- **打包**：PyInstaller 生成 `JailForge.exe`（单文件，约 12.4 MB）和
+  `JailForge-portable-win64.zip`（便携文件夹版，约 12.3 MB）；
+- **功能**：概览 / 单条测试 / 批量评测 / 进化攻击 / 结果与报告 / 关于与伦理 六个页面，
+  支持模型切换、实时进度、ASR 图表、报告/CSV 下载、`.env` 真实 API；
+- **下载**：<https://github.com/Jia-JC/JailForge/releases/latest>；
+- **说明**：单文件版首次启动需解压到系统临时目录；如果系统临时目录受限，使用便携版 zip。
+
+![桌面版概览](assets/ui-dashboard.png)
+
+![桌面版单条测试](assets/ui-single.png)
+
 ---
 
 ## 六、伦理考虑与负责任披露
@@ -434,7 +452,7 @@ python app.py
 - 规则/LLM/集成评判；
 - ASR、Wilson CI、防御下降、FPR；
 - CLI、Gradio Demo、自动报告；
-- 25 项测试全部通过；
+- 29 项测试全部通过；
 - 1536 trials Mock pilot + 3 组进化对照。
 
 **遇到的问题与修复**：
@@ -462,7 +480,23 @@ python app.py
 | LLM judge 在 3 条上调用失败，fallback 规则误判 1 条 | 新增 `scripts/recompute_real.py`：重判 + 修正汇总，ASR 从 0.6% 修正为 0.0% |
 | 真实 pilot 天花板效应 | 记录为负结果；下一版用 8 类均衡目标、多轮攻击、更弱模型 |
 
-**下一阶段**：扩展真实 pilot、评判器校准、良性集扩展、防御增强。
+### 2026-11-25：Windows 桌面版 v0.1.0
+
+- 新增 `jailforge/desktop/` 后端：路径管理、任务队列、服务层、本地 HTTP 服务；
+- 新增 `web/` SPA：六个页面、深色玻璃拟态、SVG 图表、进度条、下载、主题切换；
+- PyInstaller 打包：`JailForge.exe`（12.4 MB）+ `JailForge-portable-win64.zip`（12.3 MB）；
+- 29 项测试全部通过（新增 4 项桌面服务测试）；
+- 发布 assets 与 SHA256 已生成。
+
+**新增问题与修复**：
+
+| 问题 | 修复 |
+| --- | --- |
+| PyInstaller 全局缓存目录 ACL 拒绝 | 设置 `PYINSTALLER_CONFIG_DIR` 到工作区 `.pyinstaller/` |
+| onefile 在受限临时目录报 “Could not create temporary directory” | 同时提供便携 onedir zip；单文件版作为备选 |
+| 品牌渐变字在无头 Edge 下发暗 | 增加 `-webkit-text-fill-color: transparent` 与浅色 fallback |
+
+**下一阶段**：扩展真实 pilot、评判器校准、良性集扩展、防御增强、桌面版自动更新。
 
 ---
 
@@ -493,13 +527,18 @@ python app.py
 | `jailforge/models/` | Mock + OpenAI-compatible |
 | `jailforge/eval/` | 指标、缓存、运行器 |
 | `jailforge/data/` | 32 目标 + 16 良性 |
-| `app.py` | Gradio Demo |
-| `tests/` | 25 项测试 |
+| `jailforge/desktop/` | 桌面版后端：路径、任务队列、服务层、HTTP 服务 |
+| `web/` | 桌面版前端 SPA（HTML/CSS/JS） |
+| `launcher.py` | 桌面版入口：启动服务、打开浏览器、单实例检测 |
+| `assets/` | 图标、Windows 版本信息、便携版使用说明 |
+| `app.py` | Gradio 开发版 Demo |
+| `tests/` | 29 项测试 |
 | `docs/` | 设计、协议、路线图、本报告 |
 | `results/mock_pilot/` | Mock pilot 汇总与报告 |
 | `results/real_pilot/` | 真实 pilot 汇总、报告、规则/LLM 评判对比 |
 | `results/evolution/` | 进化实验 JSON |
-| `scripts/` | GitHub 上传、judge 对比、真实结果修正 |
+| `scripts/` | GitHub 上传、judge 对比、真实结果修正、图标、EXE 构建 |
+| `release/` | 构建出的 EXE/zip/SHA256（生成物，不入库） |
 
 ## 附录 B：自评对应
 
@@ -509,7 +548,7 @@ python app.py
 | 项目完整性与复现性（20） | 一键安装、CLI、配置、测试、自动报告、缓存 |
 | 技术深度与创新（30） | 防御感知进化、6 段基因组、5 种防御消融、双评判、CI/FPR、真实 judge 复核 |
 | 报告质量（15） | 结构完整、表格、负结果分析、伦理与局限 |
-| Demo 与展示（5） | Gradio 四标签页、SVG 图表、自动报告 |
+| Demo 与展示（5） | Windows EXE + 本地 SPA 六页面、SVG 图表、自动报告、Gradio 开发版 |
 
 ---
 
